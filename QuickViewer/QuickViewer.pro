@@ -66,6 +66,9 @@ contains(DEFINES, QV_WITH_LUMINOR) {
 win32 {
     win32-msvc* {
         QMAKE_CXXFLAGS += /wd4819
+        # NMake batch rules would build release/main.obj from
+        # ../AssociateFilesWithQuickViewer/main.cpp instead of src/main.cpp
+        CONFIG += no_batch
         # more heap area for x86
         equals(TARGET_ARCH, x86) {
             QMAKE_LFLAGS += /LARGEADDRESSAWARE

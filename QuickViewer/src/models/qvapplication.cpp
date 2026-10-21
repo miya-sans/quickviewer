@@ -381,7 +381,7 @@ void QVApplication::loadSettings()
         m_imageSortBy = (qvEnums::ImageSortBy)qvEnums::staticMetaObject.enumerator(enumIdx)
                 .keysToValue(sortByString.toLatin1().data());
     }
-    m_fitting = m_settings->value("Fitting", true).toBool();
+    m_fitting = m_settings->value("Fitting", false).toBool();
     {
         QString fitModestring = m_settings->value("ImageFitMode", "FitToRect").toString();
         int enumIdx = qvEnums::staticMetaObject.indexOfEnumerator("FitMode");
@@ -487,7 +487,7 @@ void QVApplication::loadSettings()
     m_showReadProgress = m_settings->value("ShowReadProgress", true).toBool();
     m_saveReadProgress = m_settings->value("SaveReadProgress", true).toBool();
     m_saveFolderViewWidth = m_settings->value("SaveFolderViewWidth", false).toBool();
-    m_folderViewWidth = m_settings->value("FolderViewWidth", 303).toInt();
+    m_folderViewWidth = m_settings->value("FolderViewWidth", 1431).toInt();
     m_settings->endGroup();
 
     // Catalog
