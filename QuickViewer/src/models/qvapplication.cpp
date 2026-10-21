@@ -183,12 +183,13 @@ void QVApplication::registDefaultKeyMap()
 void QVApplication::registDefaultMouseMap()
 {
     // Default mouse configs
-    m_mouseActions.addDefaultKey("actionNextPage", QMouseSequence("+::WheelDown, +::ForwardButton"));
-    m_mouseActions.addDefaultKey("actionPrevPage", QMouseSequence("+::WheelUp, +::BackButton"));
+    m_mouseActions.addDefaultKey("actionNextPage", QMouseSequence("+::ForwardButton"));
+    m_mouseActions.addDefaultKey("actionPrevPage", QMouseSequence("+::BackButton"));
     m_mouseActions.addDefaultKey("actionContextMenu", QMouseSequence("+::RightButton"));
     m_mouseActions.addDefaultKey("actionFitting", QMouseSequence("+::RightButton+MiddleButton, Ctrl+::MiddleButton"));
-    m_mouseActions.addDefaultKey("actionZoomIn", QMouseSequence("+::RightButton+WheelUp, Ctrl+::WheelUp"));
-    m_mouseActions.addDefaultKey("actionZoomOut", QMouseSequence("+::RightButton+WheelDown, Ctrl+::WheelDown"));
+    // the wheel zooms finely (ImageView::wheelEvent), the pages are turned with the keys and the back/forward buttons
+    m_mouseActions.addDefaultKey("actionZoomIn", QMouseSequence("+::WheelUp, +::RightButton+WheelUp, Ctrl+::WheelUp"));
+    m_mouseActions.addDefaultKey("actionZoomOut", QMouseSequence("+::WheelDown, +::RightButton+WheelDown, Ctrl+::WheelDown"));
     m_mouseActions.addDefaultKey("actionFullscreen", QMouseSequence("+::MiddleButton"));
 }
 
@@ -380,7 +381,7 @@ QString QVApplication::getDefaultPictureFolderPath()
 }
 
 // Revision of the settings file. Files without it were saved with the original defaults of QuickViewer
-#define QV_SETTINGS_REVISION 4
+#define QV_SETTINGS_REVISION 5
 
 void QVApplication::migrateSettings()
 {
@@ -395,6 +396,20 @@ void QVApplication::migrateSettings()
     auto migrateKey = [&](const QString& action, const QString& former, const QString& current) {
         QString key = "KeyConfig/" + action;
         if(m_settings->contains(key) && QKeySequence(m_settings->value(key).toString()) == QKeySequence(former))
+            m_settings->setValue(key, current);
+    };
+    // mouse sequences are compared in any order
+    auto mouseSet = [](const QString& seq) {
+        QStringList list;
+        foreach(const QString& s, seq.split(','))
+            if(!s.trimmed().isEmpty())
+                list << s.trimmed();
+        list.sort();
+        return list;
+    };
+    auto migrateMouse = [&](const QString& action, const QString& former, const QString& current) {
+        QString key = "MouseConfig/" + action;
+        if(m_settings->contains(key) && mouseSet(m_settings->value(key).toString()) == mouseSet(former))
             m_settings->setValue(key, current);
     };
 
@@ -430,9 +445,14 @@ void QVApplication::migrateSettings()
         migrateValue("View/DontEnlargeSmallImagesOnFitting", {"true"}, "false");
         migrateValue("WindowState/RestoreWindowState", {"false"}, "true");
     }
-    if(revision < 4) {
-        // the page number moved next to the page slider, the information of the image does not repeat it
-        migrateValue("View/StatusTextFormat", {"%p (%n)[%s(%m)] %f %2| %p [%s(%m)] %f"}, QV_STATUSBAR_FORMAT);
+    if(revision < 5) {
+        // revision 4 had removed the page number from the status bar, it is back with the former bottom bars
+        migrateValue("View/StatusTextFormat", {"%p [%s(%m)] %f %2| %p [%s(%m)] %f"}, QV_STATUSBAR_FORMAT);
+        // the wheel zooms finely instead of turning pages
+        migrateMouse("actionNextPage", "+::WheelDown, +::ForwardButton", "+::ForwardButton");
+        migrateMouse("actionPrevPage", "+::WheelUp, +::BackButton", "+::BackButton");
+        migrateMouse("actionZoomIn", "+::RightButton+WheelUp, Ctrl+::WheelUp", "+::WheelUp, +::RightButton+WheelUp, Ctrl+::WheelUp");
+        migrateMouse("actionZoomOut", "+::RightButton+WheelDown, Ctrl+::WheelDown", "+::WheelDown, +::RightButton+WheelDown, Ctrl+::WheelDown");
     }
 
     m_settings->setValue("Others/SettingsRevision", QV_SETTINGS_REVISION);
@@ -513,6 +533,7 @@ void QVApplication::loadSettings()
                 .keysToValue(sortByString.toLatin1().data());
     }
     m_fitting = m_settings->value("Fitting", true).toBool();
+    m_zoomScale = qBound(0.02, m_settings->value("ZoomScale", 1.0).toDouble(), 16.0);
     {
         QString fitModestring = m_settings->value("ImageFitMode", "FitToRect").toString();
         int enumIdx = qvEnums::staticMetaObject.indexOfEnumerator("FitMode");
@@ -695,6 +716,7 @@ void QVApplication::saveSettings()
         m_settings->setValue("ImageSortBy", sortByString);
     }
     m_settings->setValue("Fitting", m_fitting);
+    m_settings->setValue("ZoomScale", m_zoomScale);
     {
         int enumIdx = qvEnums::staticMetaObject.indexOfEnumerator("FitMode");
         QString fitModestring = QString(qvEnums::staticMetaObject.enumerator(enumIdx).valueToKey(m_fitMode));

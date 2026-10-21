@@ -6,7 +6,7 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
 
 - Windows on a 4K ultrawide monitor (3440 logical pixels wide at about 150% scaling).
 - **Priority is minimalism.** The look and feel follows nomacs: a compact dark Flat theme with neutral greys (no color accents), and small 16px monochrome icons.
-- **Bars.** On Windows, the menu bar is also the title bar. The toolbar is below it, and there is one bar at the bottom: page number, page slider and the image information.
+- **Bars.** Keep the layout of commit a7610f0: system title bar, menu bar and toolbar at the top; the page slider row and the status bar at the bottom. The user tried merged and single-bar layouts and asked to go back.
 - Every round ends with a Windows build from GitHub Actions. Give the user the artifact download link (`QuickViewer-windows-x64`) after checking it starts.
 - The user installs into `Program Files`, so settings live in `%APPDATA%\QuickViewer\quickviewer.ini` there. A portable unzip keeps the ini next to the exe. User preferences are code defaults, not a bundled ini (a bundled ini did not work for them).
 - Never commit the user's own ini files or history.
@@ -18,26 +18,19 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
 
 ## Changes in this fork (newest first)
 
-1. **Menu bar as the title bar (Windows, `mainwindowforwindows.cpp`).**
-   - **No caption:** `nativeEvent` answers `WM_NCCALCSIZE`, so the whole window is the client area. A maximized window is clipped to the monitor's work area.
-     - If the work area is the whole monitor (auto-hide taskbar, or no taskbar), one pixel is left free at the taskbar edge.
-     - Without that pixel, Qt reports the maximized window as fullscreen.
-   - **Hit test (`WM_NCHITTEST`):** 5 px edges resize the window. The empty part of the menu bar returns `HTCAPTION`: drag to move, double click to maximize, right click for the system menu.
-   - **Window style:** the window keeps Qt's normal style, so snap, the animations, the shadow and the system menu stay native. `DwmExtendFrameIntoClientArea` with a 1 px margin keeps the shadow.
-   - **Buttons:** minimize, maximize/restore and close are `QToolButton`s in the menu bar corner, after the fullscreen button. They are hidden in fullscreen and on other platforms.
-   - **Geometry:** the window is created with a caption around the restored geometry, so the `MainWindowForWindows` constructor restores the geometry again after removing it (`restoreWindowGeometry()`). Otherwise the window grows on every start.
-   - **Fallback:** with the menu bar hidden, the system title bar comes back (`updateTitleBar()`).
-2. **One bottom bar.**
-   - The `pageFrame` row holds `pageLabel` (current/total, fixed width), `pageSlider`, and `statusLabel` (file name, resolution, zoom, file size), which is elided in the middle to fit.
-   - "Show page bar" and "Show status bar" hide the slider and the information separately (`updateBottomBar()`).
-   - In fullscreen, the bar shows when the mouse is at the bottom. The status bar itself stays hidden.
-   - Messages go through `MainWindow::showStatusText()`. "Bookmark Saved." is a toast notification.
-   - The default status format no longer has the page number (`QV_STATUSBAR_FORMAT`); settings revision 4 migrates the former default.
+1. **Layout (as of a7610f0, which the user chose to keep).**
+   - The standard Windows title bar, the menu bar and the toolbar are at the top. The bottom has two lines: the page frame (`(64/89)` and the slider) and the status bar with the image information.
+   - Two layouts were tried and reverted at the user's request: the information and slider in the top bars (73a734f), and the menu bar merged with the title bar through `WM_NCCALCSIZE`/`WM_NCHITTEST` (e459089, b0c052e). Their notes are in the git history if that idea comes back.
+2. **Colors.** The Flat theme uses neutral greys: the slider fill, selections, tabs and tags (no blue accent).
 3. **Zoom.**
-   - Zoom in and zoom out multiply the displayed scale by 1.25, starting from the fitted scale. A step that passes 100%, or ends within 10% of it, stops at 100%. Limits are 2% to 1600%.
-   - `ImageView::m_zoomScale` is relative to the *original* image, so the percentage stays the same when turning pages. Large images may be loaded shrunk; `PageContent::sourceRatio()` is loaded size ÷ original size.
+   - **Keys** (`ImageView::zoomBy`): zoom in and zoom out multiply the displayed scale by 1.25, starting from the fitted scale. A step that passes 100%, or ends within 10% of it, stops at 100%. Limits are 2% to 1600%.
+   - **Mouse wheel** (`ImageView::zoomByWheel`): the plain wheel, Ctrl+wheel and right button+wheel zoom finely, 10% per notch. Smooth wheels and touchpads zoom by their fraction of a notch, and only passing 100% stops at 100%.
+     - Pages are turned with the keys and the mouse back/forward buttons. Settings revision 5 migrates the former default wheel bindings.
+     - With "Scroll with cursor when zooming" off, the point under the cursor stays in place. It is on by default, and then the mouse position scrolls the zoomed image.
+   - **Status text:** the zoom in the status text updates on every zoom step (`zoomingChanged` also fires when the drawn scale changes).
+   - **Remembered:** the manual zoom is `QVApplication::ZoomScale()` (`View/ZoomScale`), relative to the *original* image. It is kept when turning pages, opening files and restarting. Large images may be loaded shrunk; `PageContent::sourceRatio()` is loaded size ÷ original size.
 4. **Fitting.**
-   - Fitting is turned on when a file is opened (`MainWindow::fitOnOpen()` in `loadVolume`) and when the app starts. It is not reset when turning pages.
+   - Fitting is remembered (`View/Fitting`): opening a file or starting the app keeps the last fitting and zoom. It is not forced on.
    - F, M, F12 and Num+* toggle fitting. Fit also enlarges small images (`DontEnlargeSmallImagesOnFitting=false`).
 5. **Window.** Size, position and maximized state are restored like a web browser, but never fullscreen. A first start opens at 3/4 × 4/5 of the screen, centered.
 6. **Keys.** Esc closes the window (or leaves fullscreen).
@@ -80,22 +73,19 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
     | SetCopyFolder | Shift+E |
     | ExitApplicationOrFullscreen | Esc |
 
+  - **Mouse** (`addDefaultKey` in `registDefaultMouseMap`): the wheel zooms, back/forward buttons turn pages, the middle button toggles fullscreen.
   - **Other defaults**: black background with no checkered pattern, no delete confirmation, theme "Flat", and no folder panel at startup (`ShowOptionViewOnStartup`).
-- **Migration.** `QVApplication::migrateSettings()` upgrades existing ini files using `Others/SettingsRevision` (`QV_SETTINGS_REVISION`, currently 4).
+- **Migration.** `QVApplication::migrateSettings()` upgrades existing ini files using `Others/SettingsRevision` (`QV_SETTINGS_REVISION`, currently 5).
   - When you change a default, add a new `revision < N` block and bump the revision.
   - Only change values that still equal the *old* default, so the user's own choices are kept.
 
 ## Gotchas
 
 - **Line endings.** Many sources use CRLF. Edit them with a script that keeps `\r\n` (for example Python with `newline=''`), or the diff becomes the whole file.
-- **Menu bar corner widget.**
-  - `setCornerWidget` reparents the widget and hides it, so call `show()` afterwards.
-  - QMenuBar places the corner at its size hint, and lays it out again only on show/hide or a menu bar resize.
-  - `resetMenuBarCorner()` makes the corner as high as the menu items, so the window buttons fill the bar.
-- **Title bar (Qt 6.8 source, `qwindowswindow.cpp`).**
-  - Do not use `Qt::FramelessWindowHint`. Qt then maximizes the window with `MoveWindow` instead of a real maximize, which breaks snap and restore.
-  - Qt reads the frame margins from the `WM_NCCALCSIZE` result after `nativeEvent`, which is why the normal style works.
-  - Qt's `setWindowFlags` (stay on top) recomputes the style and sends `SWP_FRAMECHANGED`. That is fine, because nothing in the style is customized.
+- **Custom title bar (if it is ever tried again, see e459089 and b0c052e).**
+  - Do not use `Qt::FramelessWindowHint`. Qt then maximizes with `MoveWindow` instead of a real maximize.
+  - A caption-less maximized window that covers the whole monitor is reported by Qt as fullscreen (`isFullScreen_sys`).
+- **Wheel events.** `ImageView::wheelEvent` handles the wheel over the image; `MainWindow::wheelEvent` only gets the wheel over the other widgets.
 - **Event filter on Windows.** `MainWindowForWindows::eventFilter` returns early on `QEvent::Leave`, so `MainWindow`'s Leave handling does not run on Windows.
 - **`ImageView::zoomingChanged`** refreshes the information text. It fires when the scene rect *or* the drawn scale changes.
 

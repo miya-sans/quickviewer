@@ -9,5 +9,4 @@ so they are drawn in a single color here.
   `play`, `previous`, `rects`, `rotate-cw`, `settings`, `sliders`, `star-off`, `star-on`, `trash`, `up`,
   `zoom-in`, `zoom-out`, `zoom-reset`
 - Drawn for QuickViewer in the same style:
-  `close`, `dualview`, `first`, `home`, `last`, `maximize`, `minimize`, `next-fast`, `previous-fast`, `restore`,
-  `subfolders`, `volume-next`, `volume-previous`
+  `dualview`, `first`, `home`, `last`, `next-fast`, `previous-fast`, `subfolders`, `volume-next`, `volume-previous`

@@ -138,30 +138,6 @@ QStatusBar::item {
     border: none;
 }
 
-/* the bottom bar: page number, thin page slider and the information of the image */
-QFrame#pageFrame QSlider:horizontal {
-    min-height: 12px;
-    max-height: 12px;
-}
-
-QLabel#pageLabel,
-QLabel#statusLabel {
-    color: #aaaaaa;
-    background: transparent;
-}
-
-/* window buttons on the right of the menu bar, which is also the title bar on Windows */
-QToolButton#windowButton,
-QToolButton#closeButton {
-    padding: 0px;
-    min-width: 36px;
-}
-
-QToolButton#closeButton:hover,
-QToolButton#closeButton:pressed {
-    background-color: #c42b1c;
-}
-
 QSlider::groove:horizontal {
     height: 4px;
     background-color: rgba(255, 255, 255, 40);
@@ -172,9 +148,9 @@ QSlider::sub-page:horizontal {
 }
 
 QSlider::handle:horizontal {
-    width: 10px;
-    margin: -3px 0px;
-    border-radius: 5px;
+    width: 12px;
+    margin: -5px 0px;
+    border-radius: 6px;
     background-color: #dddddd;
 }
 

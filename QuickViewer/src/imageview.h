@@ -133,6 +133,11 @@ public slots:
 
     void on_scaleUp_triggered();
     void on_scaleDown_triggered();
+    /**
+     * @brief zoomByWheel zooms finely by the rotation of the mouse wheel (angleDelta 120 is one notch),
+     * keeping the point under the cursor (anchor in the viewport) in place
+     */
+    void zoomByWheel(int angleDelta, bool zoomIn, const QPoint& anchor = QPoint(-1, -1));
     void on_openFiler_triggered();
     void on_copyPage_triggered();
     void on_copyFile_triggered();
@@ -143,9 +148,10 @@ public slots:
 private:
     qreal getZoomScale();
     /**
-     * @brief zoomBy multiplies the displayed scale (the fitted scale when fitting is on), and turns off fitting
+     * @brief zoomBy multiplies the displayed scale (the fitted scale when fitting is on), and turns off fitting.
+     * The scale stops at 100% when a step passes it, or ends within snapRange of it
      */
-    void zoomBy(qreal factor);
+    void zoomBy(qreal factor, qreal snapRange, const QPoint& anchor = QPoint(-1, -1));
 
     RendererType m_renderer;
     QVector<PageContent> m_pages;
@@ -155,9 +161,10 @@ private:
     Qt::AnchorPoint m_hoverState;
     QVector<int> m_pageRotations;
     /**
-     * @brief m_zoomScale scale of the original image for manual ZoomIn or ZoomOut, kept when the page changes
+     * @brief m_zoomAnchor the point of the viewport that stays in place while zooming, (-1, -1) for the center.
+     * The manual zoom itself is QVApplication::ZoomScale(), remembered for the next files and the next start
      */
-    qreal m_zoomScale;
+    QPoint m_zoomAnchor;
     QFont m_font;
     QCursor m_loupeCursor;
 

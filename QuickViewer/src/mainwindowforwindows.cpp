@@ -1,5 +1,4 @@
 #include <Windows.h>
-#include <dwmapi.h>
 #include <mapi.h>
 #include <Shellapi.h>
 #include <QtCore>
@@ -9,142 +8,17 @@
 #include "ui_mainwindow.h"
 
 #define IDM_SHOWMAINMENU 2
-// width of the edges that resize the window, which has no visible frame
-#define RESIZE_BORDER 5
 
 MainWindowForWindows* MainWindowForWindows::MainWindowForWindows_self;
 WNDPROC MainWindowForWindows::DefStaticProc;
 
 MainWindowForWindows::MainWindowForWindows(QWidget *parent)
-    : MainWindow(parent), bFirstView(true), m_customTitleBar(false)
+    : MainWindow(parent), bFirstView(true)
 {
     QString menutxt = tr("Sh&ow/Hide MainMenuBar", "An additional menu displayed when right-clicking the title bar, which is used when undoing the main menu when it is hidden");
     menutxt = ui->actionShowMainMenuBar->text();
 
     MainWindowForWindows_self = this;
-
-    // The menu bar is also the title bar. The window was created with the system title bar
-    // around the restored geometry, so the geometry is restored again without it
-    updateTitleBar();
-    if(m_customTitleBar && !isFullScreen()) {
-        setWindowState(Qt::WindowNoState);
-        restoreWindowGeometry();
-    }
-}
-
-void MainWindowForWindows::updateTitleBar()
-{
-    // without the menu bar, the system title bar is used
-    bool custom = qApp->ShowMenuBar();
-    setWindowButtonsVisible(custom && !isFullScreen());
-    if(custom != m_customTitleBar) {
-        m_customTitleBar = custom;
-        applyTitleBar();
-    }
-}
-
-void MainWindowForWindows::applyTitleBar()
-{
-    HWND hwnd = reinterpret_cast<HWND>(winId());
-    // a frame of 1 pixel under the contents keeps the shadow of the window
-    const MARGINS margins = m_customTitleBar ? MARGINS{1, 1, 1, 1} : MARGINS{0, 0, 0, 0};
-    DwmExtendFrameIntoClientArea(hwnd, &margins);
-    // calculate the client area again (WM_NCCALCSIZE)
-    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-                 SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE);
-}
-
-bool MainWindowForWindows::event(QEvent *e)
-{
-    // a new native window has the system title bar again
-    if(e->type() == QEvent::WinIdChange && m_customTitleBar)
-        QTimer::singleShot(0, this, [this]{ applyTitleBar(); });
-    return MainWindow::event(e);
-}
-
-// A maximized window without a title bar would cover the whole monitor when the taskbar hides automatically
-// (or the monitor has none): Qt takes that for fullscreen, and the taskbar could not be shown.
-// One pixel is left at the edge of the taskbar
-static void leaveTaskbarEdge(RECT* rect, const RECT& monitor)
-{
-    for(UINT edge : {ABE_BOTTOM, ABE_TOP, ABE_LEFT, ABE_RIGHT}) {
-        APPBARDATA bar = {};
-        bar.cbSize = sizeof(APPBARDATA);
-        bar.uEdge = edge;
-        bar.rc = monitor;
-        if(!SHAppBarMessage(ABM_GETAUTOHIDEBAREX, &bar))
-            continue;
-        switch(edge) {
-        case ABE_TOP: rect->top++; return;
-        case ABE_LEFT: rect->left++; return;
-        case ABE_RIGHT: rect->right--; return;
-        default: rect->bottom--; return;
-        }
-    }
-    rect->bottom--;
-}
-
-bool MainWindowForWindows::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
-{
-    MSG* msg = static_cast<MSG*>(message);
-    // in fullscreen the window has no caption style
-    if(m_customTitleBar && (GetWindowLongPtr(msg->hwnd, GWL_STYLE) & WS_CAPTION) == WS_CAPTION) {
-        switch(msg->message) {
-        case WM_NCCALCSIZE: {
-            // the whole window is the client area: there is no title bar and no visible frame
-            RECT* rect = msg->wParam ? &reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam)->rgrc[0]
-                                     : reinterpret_cast<RECT*>(msg->lParam);
-            // a maximized window is larger than the screen by its invisible frame
-            if(IsZoomed(msg->hwnd)) {
-                MONITORINFO info = {};
-                info.cbSize = sizeof(MONITORINFO);
-                if(GetMonitorInfo(MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST), &info)) {
-                    IntersectRect(rect, rect, &info.rcWork);
-                    if(EqualRect(rect, &info.rcMonitor))
-                        leaveTaskbarEdge(rect, info.rcMonitor);
-                }
-            }
-            *result = 0;
-            return true;
-        }
-        case WM_NCHITTEST:
-            *result = hitTest(msg->hwnd, msg->lParam);
-            return true;
-        default:
-            break;
-        }
-    }
-    return MainWindow::nativeEvent(eventType, message, result);
-}
-
-LRESULT MainWindowForWindows::hitTest(HWND hwnd, LPARAM lParam) const
-{
-    POINT pt = { short(LOWORD(lParam)), short(HIWORD(lParam)) };
-    ScreenToClient(hwnd, &pt);
-    RECT client;
-    GetClientRect(hwnd, &client);
-    const qreal dpr = devicePixelRatioF();
-    if(!IsZoomed(hwnd)) {
-        const int border = qRound(RESIZE_BORDER * dpr);
-        const bool left = pt.x < border;
-        const bool right = pt.x >= client.right - border;
-        const bool top = pt.y < border;
-        const bool bottom = pt.y >= client.bottom - border;
-        if(top && left) return HTTOPLEFT;
-        if(top && right) return HTTOPRIGHT;
-        if(bottom && left) return HTBOTTOMLEFT;
-        if(bottom && right) return HTBOTTOMRIGHT;
-        if(left) return HTLEFT;
-        if(right) return HTRIGHT;
-        if(top) return HTTOP;
-        if(bottom) return HTBOTTOM;
-    }
-    // the empty part of the menu bar moves the window and maximizes it with a double click, like a title bar
-    const QPoint pos = ui->menuBar->mapFrom(this, QPoint(qFloor(pt.x / dpr), qFloor(pt.y / dpr)));
-    if(ui->menuBar->isVisible() && ui->menuBar->rect().contains(pos)
-       && !ui->menuBar->actionAt(pos) && !ui->menuBar->childAt(pos))
-        return HTCAPTION;
-    return HTCLIENT;
 }
 
 bool MainWindowForWindows::moveToTrush(QString path)

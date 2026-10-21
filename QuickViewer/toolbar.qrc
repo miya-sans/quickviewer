@@ -107,9 +107,5 @@
         <file>icons/flat/zoom-in.svg</file>
         <file>icons/flat/zoom-out.svg</file>
         <file>icons/flat/zoom-reset.svg</file>
-        <file>icons/flat/minimize.svg</file>
-        <file>icons/flat/maximize.svg</file>
-        <file>icons/flat/restore.svg</file>
-        <file>icons/flat/close.svg</file>
     </qresource>
 </RCC>
