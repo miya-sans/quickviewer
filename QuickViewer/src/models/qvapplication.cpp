@@ -373,6 +373,8 @@ QString QVApplication::getDefaultPictureFolderPath()
 
 void QVApplication::loadSettings()
 {
+    bool bRightSideBookDefault = QLocale::system().language() == QLocale::Japanese;
+
     // View
     m_settings->beginGroup("View");
     {
@@ -381,7 +383,7 @@ void QVApplication::loadSettings()
         m_imageSortBy = (qvEnums::ImageSortBy)qvEnums::staticMetaObject.enumerator(enumIdx)
                 .keysToValue(sortByString.toLatin1().data());
     }
-    m_fitting = m_settings->value("Fitting", false).toBool();
+    m_fitting = m_settings->value("Fitting", true).toBool();
     {
         QString fitModestring = m_settings->value("ImageFitMode", "FitToRect").toString();
         int enumIdx = qvEnums::staticMetaObject.indexOfEnumerator("FitMode");
@@ -390,7 +392,7 @@ void QVApplication::loadSettings()
     m_dualView = m_settings->value("DualView", false).toBool();
     m_stayOnTop = m_settings->value("StayOnTop", false).toBool();
 
-    m_rightSideBook = m_settings->value("RightSideBook", false).toBool();
+    m_rightSideBook = m_settings->value("RightSideBook", bRightSideBookDefault).toBool();
     m_wideImageAsOnePageInDualView = m_settings->value("WideImageAsOnePageInDualView", true).toBool();
     m_firstImageAsOnePageInDualView = m_settings->value("FirstImageAsOnePageInDualView", false).toBool();
     m_separatePagesWhenWideImage = m_settings->value("SeparatePagesWhenWideImage", false).toBool();
@@ -417,7 +419,7 @@ void QVApplication::loadSettings()
     m_backgroundColor2 = QColor(m_settings->value("BackgroundColor2", "0x5e5e5e").toString().toUInt(nullptr, 16));
     m_useCheckeredPattern  = m_settings->value("UseCheckeredPattern", false).toBool();
     m_dontEnlargeSmallImagesOnFitting  = m_settings->value("DontEnlargeSmallImagesOnFitting", true).toBool();
-    m_showFullscreenSignage  = m_settings->value("ShowFullscreenSignage", true).toBool();
+    m_showFullscreenSignage  = m_settings->value("ShowFullscreenSignage", false).toBool();
     m_dontShrinkForLargeImage  = m_settings->value("DontShrinkForLargeImage", false).toBool();
 //    m_showFullscreenTitleBar = m_settings->value("ShowFullscreenTitleBar", true).toBool();
     m_useDirect2D = m_settings->value("UseDirect2D", false).toBool();
@@ -443,7 +445,7 @@ void QVApplication::loadSettings()
     m_loupeTool = m_settings->value("LoupeTool", false).toBool();
     m_scrollWithCursorWhenZooming = m_settings->value("ScrollWithCursorWhenZooming", true).toBool();
     {
-        QString showOptionstring = m_settings->value("ShowOptionViewOnStartup", "NoViewStartup").toString();
+        QString showOptionstring = m_settings->value("ShowOptionViewOnStartup", "FolderStartup").toString();
         int enumIdx = qvEnums::staticMetaObject.indexOfEnumerator("OptionViewOnStartup");
         m_showOptionViewOnStartup = (qvEnums::OptionViewOnStartup)qvEnums::staticMetaObject.enumerator(enumIdx)
                 .keysToValue(showOptionstring.toLatin1().data());
@@ -487,13 +489,13 @@ void QVApplication::loadSettings()
     m_showReadProgress = m_settings->value("ShowReadProgress", true).toBool();
     m_saveReadProgress = m_settings->value("SaveReadProgress", true).toBool();
     m_saveFolderViewWidth = m_settings->value("SaveFolderViewWidth", false).toBool();
-    m_folderViewWidth = m_settings->value("FolderViewWidth", 1431).toInt();
+    m_folderViewWidth = m_settings->value("FolderViewWidth", 200).toInt();
     m_settings->endGroup();
 
     // Catalog
     m_settings->beginGroup("Catalog");
     {
-        QString viewModestring = m_settings->value("CatalogViewModeSetting", "List").toString();
+        QString viewModestring = m_settings->value("CatalogViewModeSetting", "Icon").toString();
         int enumIdx = qvEnums::staticMetaObject.indexOfEnumerator("CatalogViewMode");
         m_catalogViewModeSetting = (qvEnums::CatalogViewMode)qvEnums::staticMetaObject.enumerator(enumIdx).keysToValue(viewModestring.toLatin1().data());
     }
@@ -542,12 +544,12 @@ void QVApplication::loadSettings()
 
     // Others
     m_settings->beginGroup("Others");
-    m_uiLanguage = m_settings->value("UiLanguage", "English").toString();
-    m_confirmDeletePage = m_settings->value("ConfirmDeletePage", true).toBool();
+    m_uiLanguage = m_settings->value("UiLanguage", "").toString();
+    m_confirmDeletePage = m_settings->value("ConfirmDeletePage", false).toBool();
     m_settings->endGroup();
 
     m_settings->beginGroup("Appearance");
-    m_uiTheme = m_settings->value("UiTheme", "Dark").toString();
+    m_uiTheme = m_settings->value("UiTheme", "Default").toString();
     //QString themeFilePath = getApplicationFilePath(":/themes/"+m_uiTheme+".qss"); //Local files
     QString themeFilePath(":/themes/"+m_uiTheme+".qss"); // Resource files
     QFile File(themeFilePath);

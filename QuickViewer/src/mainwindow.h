@@ -22,7 +22,7 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
-    virtual bool moveToTrush(QString ) {return false;}
+    virtual bool moveToTrush(QString path) {return QFile::moveToTrash(path);}
     virtual bool setStayOnTop(bool ) {return false;}
     virtual void setWindowTop(bool ) {}
     virtual void setMailAttachment(QString ) {}
