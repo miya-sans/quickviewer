@@ -24,14 +24,19 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
 2. **Colors.** The Flat theme uses neutral greys: the slider fill, selections, tabs and tags (no blue accent).
 3. **Zoom.**
    - **Keys** (`ImageView::zoomBy`): zoom in and zoom out multiply the displayed scale by 1.25, starting from the fitted scale. A step that passes 100%, or ends within 10% of it, stops at 100%. Limits are 2% to 1600%.
-   - **Mouse wheel** (`ImageView::zoomByWheel`): the plain wheel, Ctrl+wheel and right button+wheel zoom finely, 10% per notch. Smooth wheels and touchpads zoom by their fraction of a notch, and only passing 100% stops at 100%.
+   - **Mouse wheel** (`ImageView::zoomByWheel`): the plain wheel, Ctrl+wheel and right button+wheel zoom finely, 5% per notch (`WHEEL_ZOOM_STEP`; the user's wheel is very sensitive). Smooth wheels and touchpads zoom by their fraction of a notch, and only passing 100% stops at 100%.
      - Pages are turned with the keys and the mouse back/forward buttons. Settings revision 5 migrates the former default wheel bindings.
-     - With "Scroll with cursor when zooming" off, the point under the cursor stays in place. It is on by default, and then the mouse position scrolls the zoomed image.
+     - **"Scroll with cursor when zooming"** (on by default, and on for the user): the mouse position pans the zoomed image (`scrollOnZoomMode`).
+       - A zoom (wheel or keys) lands where that pan puts it, so it goes where the cursor points and does not jump at the next mouse move.
+       - `setSceneRectMode` skips its keep-the-center correction while the cursor is over the view. Without the cursor over the view, the zoom keeps the center.
+     - **With that option off,** the point under the cursor stays in place (`zoomBy` with an anchor).
    - **Status text:** the zoom in the status text updates on every zoom step (`zoomingChanged` also fires when the drawn scale changes).
    - **Remembered:** the manual zoom is `QVApplication::ZoomScale()` (`View/ZoomScale`), relative to the *original* image. It is kept when turning pages, opening files and restarting. Large images may be loaded shrunk; `PageContent::sourceRatio()` is loaded size ÷ original size.
 4. **Fitting.**
    - Fitting is remembered (`View/Fitting`): opening a file or starting the app keeps the last fitting and zoom. It is not forced on.
-   - F, M, F12 and Num+* toggle fitting. Fit also enlarges small images (`DontEnlargeSmallImagesOnFitting=false`).
+   - **F zooms to fit** (`actionFitToWindow`), every time. Fit to window and Fit to width are an exclusive `QActionGroup`, so triggering the checked one fits again instead of unchecking it (before, every second press did nothing).
+   - **M, F12 and Num+* toggle fitting** (`actionFitting`). Settings revision 6 moved F from the toggle back to Fit to window.
+   - Fit also enlarges small images (`DontEnlargeSmallImagesOnFitting=false`).
 5. **Window.** Size, position and maximized state are restored like a web browser, but never fullscreen. A first start opens at 3/4 × 4/5 of the screen, centered.
 6. **Keys.** Esc closes the window (or leaves fullscreen).
 7. **Application icon.** A lighter greyscale version of the original icon (`QuickViewer/icons/appicon.ico`).
@@ -67,7 +72,8 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
     | PrevPage | H, Left, Backspace, A |
     | ZoomIn | K, Num++, Up, W |
     | ZoomOut | J, Num+-, Down, S |
-    | Fitting | F, M, F12, Num+* |
+    | Fitting (toggle) | M, F12, Num+* |
+    | FitToWindow (zoom to fit) | F |
     | RecyclePage | Del, Q |
     | CopyToFolder | E |
     | SetCopyFolder | Shift+E |
@@ -75,7 +81,7 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
 
   - **Mouse** (`addDefaultKey` in `registDefaultMouseMap`): the wheel zooms, back/forward buttons turn pages, the middle button toggles fullscreen.
   - **Other defaults**: black background with no checkered pattern, no delete confirmation, theme "Flat", and no folder panel at startup (`ShowOptionViewOnStartup`).
-- **Migration.** `QVApplication::migrateSettings()` upgrades existing ini files using `Others/SettingsRevision` (`QV_SETTINGS_REVISION`, currently 5).
+- **Migration.** `QVApplication::migrateSettings()` upgrades existing ini files using `Others/SettingsRevision` (`QV_SETTINGS_REVISION`, currently 6).
   - When you change a default, add a new `revision < N` block and bump the revision.
   - Only change values that still equal the *old* default, so the user's own choices are kept.
 
@@ -126,4 +132,4 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
 ## Ideas not done yet
 
 - Translations (`QuickViewer/translations/*.ts`) do not have the new strings: Copy to Folder, the notifications, and the folder dialog.
-- When fitting is turned off with F, the view zooms one 1.25 step from the fitted scale. A toggle to 100% may be preferred; ask the user.
+- When fitting is turned off with M, the view zooms one 1.25 step from the fitted scale. A toggle to 100% may be preferred; ask the user.

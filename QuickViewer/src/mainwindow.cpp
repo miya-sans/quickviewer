@@ -90,6 +90,10 @@ MainWindow::MainWindow(QWidget *parent)
             << ui->actionSortByFileSizeDescending
             << ui->actionSortByModifiedTime
             << ui->actionSortByModifiedTimeDescending;
+    // Fit to window and Fit to width are exclusive, so triggering the checked one (F) fits again instead of unchecking it
+    QActionGroup* fitModeGroup = new QActionGroup(this);
+    fitModeGroup->addAction(ui->actionFitToWindow);
+    fitModeGroup->addAction(ui->actionFitToWidth);
     switch(qApp->ImageFitMode()) {
     case qvEnums::FitToRect: ui->actionFitToWindow->setChecked(true); break;
     case qvEnums::FitToWidth: ui->actionFitToWidth->setChecked(true); break;

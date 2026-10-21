@@ -275,13 +275,18 @@ void ImageView::setSceneRectMode(bool scrolled, const QRect &sceneRect)
 
     // Correct the scroll bar so that it keep at the center of the viewport
     // when the image display magnification is changed.
+    // With 'Scroll with cursor when zooming', scrollOnZoomMode() above has already placed the images where the mouse
+    // pans them, so a zoom goes to where the cursor points and does not jump at the next mouse move.
+    // Without the mouse over the images (zooming with the keys), the zoom keeps the center
+    bool pannedByCursor = newMode && !m_loupeEnable && qApp->ScrollWithCursorWhenZooming()
+            && viewport()->rect().contains(viewport()->mapFromGlobal(QCursor::pos()));
     bool scaleChanged = false;
     if (m_readyStack == 1) {
         qreal newScale = m_pages[0].DrawScale;
         scaleChanged = m_beforeScale != newScale;
         if(!qApp->Fitting()) {
             // zoomBy() keeps the point under the mouse in place itself when zooming with the wheel
-            if (!m_loupeEnable && m_zoomAnchor.x() < 0 && m_beforeScale > 0 && m_beforeScale != newScale) {
+            if (!m_loupeEnable && !pannedByCursor && m_zoomAnchor.x() < 0 && m_beforeScale > 0 && m_beforeScale != newScale) {
                 int vw = 0.5*viewport()->width();
                 int vh = 0.5*viewport()->height();
                 int sx2 = (sx+vw)/m_beforeScale*newScale-vw;
@@ -707,9 +712,10 @@ void ImageView::on_fitToWindow_triggered(bool enable)
     if(!enable) {
         return;
     }
+    // fitting is on before fittingChanged, so that the Fitting button follows
     qApp->setImageFitMode(qvEnums::FitToRect);
-    emit fittingChanged(qvEnums::FitToRect);
     qApp->setFitting(true);
+    emit fittingChanged(qvEnums::FitToRect);
     readyForPaint();
 }
 
@@ -719,8 +725,8 @@ void ImageView::on_fitToWidth_triggered(bool enable)
         return;
     }
     qApp->setImageFitMode(qvEnums::FitToWidth);
-    emit fittingChanged(qvEnums::FitToWidth);
     qApp->setFitting(true);
+    emit fittingChanged(qvEnums::FitToWidth);
     readyForPaint();
 }
 
@@ -742,8 +748,8 @@ void ImageView::on_rightSideBook_triggered(bool rightSideBook)
 // The scale stops at 100% (of the original image) when a step goes over it, and for the keys also when it ends near it
 #define ZOOM_STEP 1.25
 #define ZOOM_SNAP_RANGE 0.1
-// the wheel zooms finely: 10% for each notch, smooth wheels and touchpads zoom by their fraction of a notch
-#define WHEEL_ZOOM_STEP 1.1
+// the wheel zooms finely: 5% for each notch, smooth wheels and touchpads zoom by their fraction of a notch
+#define WHEEL_ZOOM_STEP 1.05
 #define MIN_ZOOM 0.02
 #define MAX_ZOOM 16.0
 

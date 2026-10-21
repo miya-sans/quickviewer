@@ -169,7 +169,9 @@ void QVApplication::registDefaultKeyMap()
     m_keyActions.addDefaultKey("actionShowMenuBar", QKeySequence("F9"));
     m_keyActions.addDefaultKey("actionDualView", QKeySequence("Y, F10"));
     m_keyActions.addDefaultKey("actionFullscreen", QKeySequence("F11"));
-    m_keyActions.addDefaultKey("actionFitting", QKeySequence("F, M, F12, Num+*"));
+    // F zooms to fit (Fit to window), M toggles fitting
+    m_keyActions.addDefaultKey("actionFitting", QKeySequence("M, F12, Num+*"));
+    m_keyActions.addDefaultKey("actionFitToWindow", QKeySequence("F"));
     m_keyActions.addDefaultKey("actionRotate", QKeySequence("R"));
     m_keyActions.addDefaultKey("actionRecyclePage", QKeySequence("Del, Q"));
     m_keyActions.addDefaultKey("actionDeletePage", QKeySequence("Shift+Del"));
@@ -381,7 +383,7 @@ QString QVApplication::getDefaultPictureFolderPath()
 }
 
 // Revision of the settings file. Files without it were saved with the original defaults of QuickViewer
-#define QV_SETTINGS_REVISION 5
+#define QV_SETTINGS_REVISION 6
 
 void QVApplication::migrateSettings()
 {
@@ -453,6 +455,14 @@ void QVApplication::migrateSettings()
         migrateMouse("actionPrevPage", "+::WheelUp, +::BackButton", "+::BackButton");
         migrateMouse("actionZoomIn", "+::RightButton+WheelUp, Ctrl+::WheelUp", "+::WheelUp, +::RightButton+WheelUp, Ctrl+::WheelUp");
         migrateMouse("actionZoomOut", "+::RightButton+WheelDown, Ctrl+::WheelDown", "+::WheelDown, +::RightButton+WheelDown, Ctrl+::WheelDown");
+    }
+    if(revision < 6) {
+        // F zooms to fit instead of toggling fitting (revision 1 had moved it from 'Fit to window'), M toggles fitting.
+        // 'Fit to window' gets F only when the customized 'Fitting' keys do not use it
+        migrateKey("actionFitting", "F, M, F12, Num+*", "M, F12, Num+*");
+        QString fitting = QKeySequence(m_settings->value("KeyConfig/actionFitting").toString()).toString(QKeySequence::PortableText);
+        if(!fitting.split(", ").contains("F"))
+            migrateKey("actionFitToWindow", "", "F");
     }
 
     m_settings->setValue("Others/SettingsRevision", QV_SETTINGS_REVISION);
