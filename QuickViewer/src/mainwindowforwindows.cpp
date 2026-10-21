@@ -62,6 +62,28 @@ bool MainWindowForWindows::event(QEvent *e)
     return MainWindow::event(e);
 }
 
+// A maximized window without a title bar would cover the whole monitor when the taskbar hides automatically
+// (or the monitor has none): Qt takes that for fullscreen, and the taskbar could not be shown.
+// One pixel is left at the edge of the taskbar
+static void leaveTaskbarEdge(RECT* rect, const RECT& monitor)
+{
+    for(UINT edge : {ABE_BOTTOM, ABE_TOP, ABE_LEFT, ABE_RIGHT}) {
+        APPBARDATA bar = {};
+        bar.cbSize = sizeof(APPBARDATA);
+        bar.uEdge = edge;
+        bar.rc = monitor;
+        if(!SHAppBarMessage(ABM_GETAUTOHIDEBAREX, &bar))
+            continue;
+        switch(edge) {
+        case ABE_TOP: rect->top++; return;
+        case ABE_LEFT: rect->left++; return;
+        case ABE_RIGHT: rect->right--; return;
+        default: rect->bottom--; return;
+        }
+    }
+    rect->bottom--;
+}
+
 bool MainWindowForWindows::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
 {
     MSG* msg = static_cast<MSG*>(message);
@@ -76,8 +98,11 @@ bool MainWindowForWindows::nativeEvent(const QByteArray &eventType, void *messag
             if(IsZoomed(msg->hwnd)) {
                 MONITORINFO info = {};
                 info.cbSize = sizeof(MONITORINFO);
-                if(GetMonitorInfo(MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST), &info))
+                if(GetMonitorInfo(MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST), &info)) {
                     IntersectRect(rect, rect, &info.rcWork);
+                    if(EqualRect(rect, &info.rcMonitor))
+                        leaveTaskbarEdge(rect, info.rcMonitor);
+                }
             }
             *result = 0;
             return true;
