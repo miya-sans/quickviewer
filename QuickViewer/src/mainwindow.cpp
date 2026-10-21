@@ -1634,7 +1634,7 @@ void MainWindow::onActionRecyclePage_triggered()
         }
     }
     if(moveToTrush(path))  {
-        m_pageManager.reloadVolumeAfterRemoveImage();
+        m_pageManager.reloadVolume();
     }
 }
 
@@ -1671,7 +1671,7 @@ void MainWindow::onActionDeletePage_triggered()
     }
     QFile file(path);
     if(file.remove()) {
-        m_pageManager.reloadVolumeAfterRemoveImage();
+        m_pageManager.reloadVolume();
     }
 }
 

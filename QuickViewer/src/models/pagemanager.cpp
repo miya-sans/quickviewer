@@ -4,6 +4,9 @@
 #include "fileloadersubdirectory.h"
 #include "volumemanagerbuilder.h"
 
+// wait for the folder to settle before reloading (e.g. while files are being copied)
+#define WATCH_RELOAD_DELAY 500
+
 PageManager::PageManager(QObject* parent)
     : QObject(parent)
     , m_currentPage(0)
@@ -15,6 +18,10 @@ PageManager::PageManager(QObject* parent)
 //    , m_builderForAssoc("", this)
 {
     installEventFilter(this);
+    m_watchTimer.setSingleShot(true);
+    m_watchTimer.setInterval(WATCH_RELOAD_DELAY);
+    connect(&m_watcher, SIGNAL(directoryChanged(QString)), this, SLOT(onWatcher_directoryChanged(QString)));
+    connect(&m_watchTimer, SIGNAL(timeout()), this, SLOT(onWatchTimer_timeout()));
 }
 
 bool PageManager::loadVolume(QString path, bool coverOnly)
@@ -26,6 +33,7 @@ bool PageManager::loadVolume(QString path, bool coverOnly)
     m_fileVolume = nullptr;
     VolumeManager* newer = addVolumeCache(path, coverOnly, true);
     if(!newer) {
+        updateWatcher();
         emit volumeChanged("");
         return false;
     }
@@ -39,6 +47,7 @@ bool PageManager::loadVolume(QString path, bool coverOnly)
     emit volumeChanged(m_fileVolume->volumePath());
     // if volume is folder and the path incluces filename, pageCount() != 0
     selectPage(coverOnly ? 0 : m_fileVolume->pageCount());
+    updateWatcher();
     return true;
 }
 
@@ -67,6 +76,7 @@ bool PageManager::loadVolumeWithFile(QString path, bool prohibitProhibit2Page)
         clearPages();
         m_currentPage = newer->pageCount();
         qApp->postEvent(this, new ReloadedEvent());
+        return true;
     });
     return true;
 }
@@ -81,6 +91,8 @@ void PageManager::on_pageEnumerated()
 
 void PageManager::onSlideShowStarted()
 {
+    if(!m_fileVolume)
+        return;
     m_fileVolume->startSlideShow();
     if(qApp->SlideShowRandomly())
         firstPage();
@@ -88,6 +100,8 @@ void PageManager::onSlideShowStarted()
 
 void PageManager::onSlideShowStopped()
 {
+    if(!m_fileVolume)
+        return;
     m_fileVolume->stopSlideShow();
     if(qApp->SlideShowRandomly())
         firstPage();
@@ -183,23 +197,130 @@ void PageManager::prevVolume()
     }
 }
 
-void PageManager::reloadVolumeAfterRemoveImage()
+void PageManager::reloadVolume()
 {
-    if(!m_fileVolume)
+    if(!m_fileVolume || m_fileVolume->isArchive())
         return;
-    clearPages();
     QString volumepath = QDir::fromNativeSeparators(m_fileVolume->volumePath());
-    if(m_fileVolume->size() > 1) {
-        // if(!m_fileVolume->nextPage())
-        //     m_fileVolume->prevPage();
-        QString fullpath = m_fileVolume->currentPathWithSeparator();
-        m_volumes.remove(volumepath);
-        m_fileVolume = nullptr;
-        loadVolume(fullpath);
-    } else {
-        m_volumes.remove(volumepath);
-        m_fileVolume = nullptr;
+    int oldPage = m_currentPage;
+    QStringList oldNames;
+    for(int i = 0; i < m_fileVolume->size(); i++)
+        oldNames << m_fileVolume->getIndexedFileName(i);
+
+    clearPages();
+    m_volumes.remove(volumepath);
+    m_fileVolume = nullptr;
+    m_currentPage = 0;
+    VolumeManager* newer = addVolumeCache(volumepath, false, true);
+    if(!newer) {
+        // No images are left in the folder.
+        // The folder is still watched, so the images will be shown when added again
+        emit volumeChanged("");
+        return;
     }
+    m_fileVolume = newer;
+
+    // Keep the displayed image if it still exists, otherwise select the nearest remaining one
+    QHash<QString, int> newIndexes;
+    for(int i = 0; i < newer->size(); i++)
+        newIndexes.insert(newer->getIndexedFileName(i), i);
+    int idx = -1;
+    for(int i = oldPage; i < oldNames.size() && idx < 0; i++)
+        idx = newIndexes.value(oldNames[i], -1);
+    for(int i = oldPage-1; i >= 0 && idx < 0; i--)
+        idx = newIndexes.value(oldNames[i], -1);
+    if(idx < 0)
+        idx = qBound(0, oldPage, newer->size()-1);
+
+    emit volumeChanged(m_fileVolume->volumePath());
+    selectPage(idx);
+    updateWatcher();
+}
+
+static QStringList listImagesInFolder(const QString& path)
+{
+    QScopedPointer<IFileLoader> loader(qApp->ShowSubfolders()
+        ? static_cast<IFileLoader*>(new FileLoaderSubDirectory(nullptr, path))
+        : static_cast<IFileLoader*>(new FileLoaderDirectory(nullptr, path)));
+    QStringList images = loader->contents();
+    images.sort();
+    return images;
+}
+
+void PageManager::updateWatcher()
+{
+    // QFileSystemWatcher must be used on the thread of PageManager
+    if(QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "updateWatcher", Qt::QueuedConnection);
+        return;
+    }
+    m_watchTimer.stop();
+    if(!m_fileVolume || m_fileVolume->isArchive()) {
+        m_watchedVolume.clear();
+        setWatchedDirectories(QStringList());
+        return;
+    }
+    m_watchedVolume = QDir::fromNativeSeparators(m_fileVolume->volumePath());
+    QStringList dirs = {m_watchedVolume};
+    QString realpath = QDir::fromNativeSeparators(m_fileVolume->realVolumePath());
+    if(realpath != m_watchedVolume)
+        dirs << realpath;
+    if(m_fileVolume->hasSubDirectories()) {
+        QDirIterator it(m_watchedVolume, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        while(it.hasNext())
+            dirs << it.next();
+    }
+    setWatchedDirectories(dirs);
+}
+
+void PageManager::setWatchedDirectories(const QStringList& dirs)
+{
+    QStringList olds = m_watcher.directories();
+    if(olds == dirs)
+        return;
+    if(!olds.isEmpty())
+        m_watcher.removePaths(olds);
+    if(!dirs.isEmpty())
+        m_watcher.addPaths(dirs);
+}
+
+void PageManager::onWatcher_directoryChanged(const QString& )
+{
+    // Changes are often notified many times in a row, so reload only once after a while
+    m_watchTimer.start();
+}
+
+void PageManager::onWatchTimer_timeout()
+{
+    if(m_watchedVolume.isEmpty())
+        return;
+    if(!QDir(m_watchedVolume).exists()) {
+        // the folder itself was removed or renamed
+        if(m_fileVolume && QDir::fromNativeSeparators(m_fileVolume->volumePath()) == m_watchedVolume) {
+            reloadVolume();
+        } else {
+            m_watchedVolume.clear();
+            setWatchedDirectories(QStringList());
+        }
+        return;
+    }
+    QStringList images = listImagesInFolder(m_watchedVolume);
+    if(!m_fileVolume) {
+        // the folder was emptied before, and images have been added again
+        if(!images.isEmpty())
+            loadVolume(m_watchedVolume);
+        return;
+    }
+    if(m_fileVolume->isArchive() || QDir::fromNativeSeparators(m_fileVolume->volumePath()) != m_watchedVolume)
+        return;
+    QStringList currents = m_fileVolume->FileLoader()->contents();
+    currents.sort();
+    if(images == currents) {
+        // subfolders may have been added or removed
+        updateWatcher();
+        return;
+    }
+    reloadVolume();
 }
 
 VolumeManager* PageManager::addVolumeCache(QString path, bool onlyCover, bool immediate)
@@ -332,6 +453,7 @@ void PageManager::selectPage(int idx, VolumeManager::CacheMode cacheMode)
 
 void PageManager::firstPage()
 {
+    if(m_fileVolume == nullptr) return;
     m_fileVolume->setCacheMode(VolumeManager::Normal);
     selectPage(0);
 }
@@ -417,6 +539,7 @@ QSize PageManager::viewportSize()
 
 void PageManager::bookProgress()
 {
+    if(m_fileVolume == nullptr) return;
     QString path = QDir::fromNativeSeparators(m_fileVolume->volumePath());
     BookProgress book = {
         QFileInfo(m_fileVolume->volumePath()).fileName(),
@@ -446,9 +569,12 @@ bool PageManager::eventFilter(QObject *obj, QEvent *event)
 {
     switch (event->type()) {
     case ReloadedEventType:
+        if(!m_fileVolume)
+            return true;
         reloadCurrentPage(true);
         emit pageChanged();
         emit volumeChanged(m_fileVolume->volumePath());
+        updateWatcher();
         return true;
 
     default:
@@ -459,6 +585,8 @@ bool PageManager::eventFilter(QObject *obj, QEvent *event)
 
 QString PageManager::currentPageNumAsString() const
 {
+    if(!m_fileVolume)
+        return "";
     if(m_pages.size() == 2) {
         return QString("(%1-%2/%3)").arg(m_currentPage+1).arg(m_currentPage+2).arg(m_fileVolume->size());
     } else {
@@ -494,7 +622,7 @@ QString PageManager::currentPageStatusAsString() const
 
 QString PageManager::pageSignage(int page) const
 {
-    if(m_pages.size() <= page)
+    if(!m_fileVolume || m_pages.size() <= page)
         return "";
     return QString("%1 (%2/%3)")
             .arg(QDir::toNativeSeparators(m_fileVolume->getPathByFileName(m_pages[page].Path)))

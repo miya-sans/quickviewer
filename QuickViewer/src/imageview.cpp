@@ -550,7 +550,7 @@ void ImageView::on_showSubfolders_triggered(bool enable)
 {
     qApp->setShowSubfolders(enable);
     if(m_pageManager->isFolder()) {
-        m_pageManager->reloadVolumeAfterRemoveImage();
+        m_pageManager->reloadVolume();
     }
 }
 
