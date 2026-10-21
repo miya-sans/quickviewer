@@ -181,6 +181,7 @@ public slots:
     void onActionSetCopyFolder_triggered();
     void onActionDeletePage_triggered();
     void onActionExitApplicationOrFullscreen_triggered();
+    void onActionExitFullscreen_triggered();
     void onActionMailAttachment_triggered();
     void onActionRenameImageFile_triggered();
     void onActionConfirmDeletePage_triggered(bool enable);

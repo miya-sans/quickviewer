@@ -6,6 +6,7 @@
 
 // wait for the folder to settle before reloading (e.g. while files are being copied)
 #define WATCH_RELOAD_DELAY 500
+#define MAX_WATCHED_DIRECTORIES 256
 
 PageManager::PageManager(QObject* parent)
     : QObject(parent)
@@ -327,8 +328,10 @@ void PageManager::updateWatcher()
     if(realpath != m_watchedVolume)
         dirs << realpath;
     if(m_fileVolume->hasSubDirectories()) {
+        // Each watched folder needs a handle of the OS (and a thread per 63 folders on Windows),
+        // so large trees are watched only partially
         QDirIterator it(m_watchedVolume, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
-        while(it.hasNext())
+        while(it.hasNext() && dirs.size() < MAX_WATCHED_DIRECTORIES)
             dirs << it.next();
     }
     setWatchedDirectories(dirs);

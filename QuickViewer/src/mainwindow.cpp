@@ -114,6 +114,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_toast = new ToastNotification(ui->graphicsView);
     connect(ui->actionCopyToFolder, SIGNAL(triggered()), this, SLOT(onActionCopyToFolder_triggered()));
     connect(ui->actionSetCopyFolder, SIGNAL(triggered()), this, SLOT(onActionSetCopyFolder_triggered()));
+    connect(ui->actionExitFullscreen, SIGNAL(triggered()), this, SLOT(onActionExitFullscreen_triggered()));
 
     ui->actionLargeToolbarIcons->setChecked(qApp->LargeToolbarIcons());
     ui->actionLargeToolbarIcons->triggered(qApp->LargeToolbarIcons());
@@ -1539,7 +1540,7 @@ void MainWindow::onActionLargeToolbarIcons_triggered(bool enable)
         enable ? QSize(qvEnums::Large2Icon, qvEnums::Large2Icon)
                : QSize(qvEnums::NormalIcon, qvEnums::NormalIcon));
     int fontsize = enable ? (int)(1.5*m_menubarFontSize) : m_menubarFontSize;
-    m_fullscreenButton->setIconSize(QSize(2*fontsize, 2*fontsize));
+    m_fullscreenButton->setIconSize(enable ? QSize(2*fontsize, 2*fontsize) : QSize(qvEnums::NormalIcon, qvEnums::NormalIcon));
     QFont font = ui->menuBar->font();
     font.setPointSize(fontsize);
 
@@ -1587,6 +1588,16 @@ void MainWindow::onActionExitApplicationOrFullscreen_triggered()
         ui->actionFullscreen->trigger();
     else
         ui->actionExit->trigger();
+}
+
+void MainWindow::onActionExitFullscreen_triggered()
+{
+    if(m_catalogWindow) {
+        onCatalogWindow_closed();
+        return;
+    }
+    if(isFullScreen())
+        ui->actionFullscreen->trigger();
 }
 
 void MainWindow::onActionMailAttachment_triggered()
@@ -1647,6 +1658,9 @@ void MainWindow::onActionRecyclePage_triggered()
     }
     if(moveToTrush(path))  {
         m_pageManager.reloadVolume();
+        m_toast->showMessage(tr("Moved to the Recycle Bin", "Notification after the displayed image is moved to Recycle Bin"), path, QString(), false);
+    } else {
+        m_toast->showMessage(tr("Could not move the image to the Recycle Bin", "Notification when moving the image to Recycle Bin failed"), path, QString(), false);
     }
 }
 
@@ -1793,6 +1807,9 @@ void MainWindow::onActionDeletePage_triggered()
     QFile file(path);
     if(file.remove()) {
         m_pageManager.reloadVolume();
+        m_toast->showMessage(tr("Deleted", "Notification after the displayed image is deleted"), path, QString(), false);
+    } else {
+        m_toast->showMessage(tr("Could not delete the image: %1", "Notification when deleting the image failed").arg(file.errorString()), path, QString(), false);
     }
 }
 

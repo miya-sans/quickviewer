@@ -46,7 +46,7 @@ ToastNotification::ToastNotification(QWidget *parent)
     hide();
 }
 
-void ToastNotification::showMessage(const QString &title, const QString &folder, const QString &fileToSelect)
+void ToastNotification::showMessage(const QString &title, const QString &folder, const QString &fileToSelect, bool openFolderButton)
 {
     m_folder = folder;
     m_fileToSelect = fileToSelect;
@@ -56,7 +56,7 @@ void ToastNotification::showMessage(const QString &title, const QString &folder,
     m_folderLabel->setText(m_folderLabel->fontMetrics().elidedText(nativeFolder, Qt::ElideMiddle, maxTextWidth));
     m_folderLabel->setToolTip(nativeFolder);
     m_folderLabel->setVisible(!folder.isEmpty());
-    m_openFolderButton->setVisible(!folder.isEmpty());
+    m_openFolderButton->setVisible(!folder.isEmpty() && openFolderButton);
     adjustSize();
     reposition();
     show();

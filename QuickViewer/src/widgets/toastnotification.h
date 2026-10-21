@@ -22,8 +22,9 @@ public:
      * @param title first line, e.g. 'Copied "page01.jpg" to'
      * @param folder shown on the second line and opened with the button. When it is empty, they are hidden
      * @param fileToSelect selected in the file manager when the folder is opened
+     * @param openFolderButton shows the button to open the folder
      */
-    void showMessage(const QString& title, const QString& folder = QString(), const QString& fileToSelect = QString());
+    void showMessage(const QString& title, const QString& folder = QString(), const QString& fileToSelect = QString(), bool openFolderButton = true);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;

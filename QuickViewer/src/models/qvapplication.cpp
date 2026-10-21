@@ -78,6 +78,7 @@ QVApplication::QVApplication(int &argc, char **argv)
     connect(&m_languageSelector, SIGNAL(languageChanged(QString)), &m_qtbaseLanguageSelector, SLOT(resetTranslator(QString)));
     registDefaultKeyMap();
     registDefaultMouseMap();
+    m_nativeStyleName = style()->name();
     loadSettings();
 
     FileLoader7zArchive::initializeLib();
@@ -148,7 +149,8 @@ void QVApplication::myInstallTranslator()
 void QVApplication::registDefaultKeyMap()
 {
     // Default key configs
-    m_keyActions.addDefaultKey("actionExitApplicationOrFullscreen", QKeySequence("Esc"));
+    // Esc only leaves fullscreen, the window is not closed by it
+    m_keyActions.addDefaultKey("actionExitFullscreen", QKeySequence("Esc"));
     m_keyActions.addDefaultKey("actionNextPage", QKeySequence("L, Right, Space, D"));
     m_keyActions.addDefaultKey("actionPrevPage", QKeySequence("H, Left, Backspace, A"));
     m_keyActions.addDefaultKey("actionFastForward", QKeySequence("Shift+L, Num+3"));
@@ -266,6 +268,7 @@ void QVApplication::registActions(Ui::MainWindow *ui)
     m_keyActions.registAction("actionRestoreWindowState", ui->actionRestoreWindowState, groupName);
     m_keyActions.registAction("actionFullscreen", ui->actionFullscreen, groupName);
     m_keyActions.registAction("actionExitApplicationOrFullscreen", ui->actionExitApplicationOrFullscreen, groupName);
+    m_keyActions.registAction("actionExitFullscreen", ui->actionExitFullscreen, groupName);
     m_keyActions.registAction("actionMaximizeOrNormal", ui->actionMaximizeOrNormal, groupName);
     m_keyActions.registAction("actionShowPanelSeparateWindow", ui->actionShowPanelSeparateWindow, groupName);
     m_keyActions.registAction("actionStayOnTop", ui->actionStayOnTop, groupName);
@@ -377,39 +380,47 @@ QString QVApplication::getDefaultPictureFolderPath()
 }
 
 // Revision of the settings file. Files without it were saved with the original defaults of QuickViewer
-#define QV_SETTINGS_REVISION 1
+#define QV_SETTINGS_REVISION 2
 
 void QVApplication::migrateSettings()
 {
-    if(m_settings->value("Others/SettingsRevision", 0).toInt() >= QV_SETTINGS_REVISION)
+    int revision = m_settings->value("Others/SettingsRevision", 0).toInt();
+    if(revision >= QV_SETTINGS_REVISION)
         return;
     // Only values that are still the former defaults are changed, so customized values are kept
     auto migrateValue = [&](const QString& key, const QStringList& formers, const QString& current) {
         if(m_settings->contains(key) && formers.contains(m_settings->value(key).toString(), Qt::CaseInsensitive))
             m_settings->setValue(key, current);
     };
-    migrateValue("View/BackgroundColor", {"797979", "ff797979", "0x797979"}, "ff000000");
-    migrateValue("View/UseCheckeredPattern", {"true"}, "false");
-    migrateValue("View/ShowOptionViewOnStartup", {"FolderStartup"}, "NoViewStartup");
-    migrateValue("Others/ConfirmDeletePage", {"true"}, "false");
-    migrateValue("Appearance/UiTheme", {"Default"}, "Flat");
-
     auto migrateKey = [&](const QString& action, const QString& former, const QString& current) {
         QString key = "KeyConfig/" + action;
         if(m_settings->contains(key) && QKeySequence(m_settings->value(key).toString()) == QKeySequence(former))
             m_settings->setValue(key, current);
     };
-    migrateKey("actionNextPage", "L, Right, Space", "L, Right, Space, D");
-    migrateKey("actionPrevPage", "H, Left, Backspace", "H, Left, Backspace, A");
-    migrateKey("actionZoomIn", "K, Num++", "K, Num++, Up, W");
-    migrateKey("actionZoomOut", "J, Num+-", "J, Num+-, Down, S");
-    // Q and W are used for deleting and zooming
-    migrateKey("actionLoadBookmark", "Q", "");
-    migrateKey("actionSaveBookmark", "W", "");
-    migrateKey("actionRecyclePage", "Del", "Del, Q");
-    // F toggles fitting like M (it was given to 'Fit to window' by some settings)
-    migrateKey("actionFitToWindow", "F", "");
-    migrateKey("actionFitting", "M, F12, Num+*", "F, M, F12, Num+*");
+
+    if(revision < 1) {
+        migrateValue("View/BackgroundColor", {"797979", "ff797979", "0x797979"}, "ff000000");
+        migrateValue("View/UseCheckeredPattern", {"true"}, "false");
+        migrateValue("View/ShowOptionViewOnStartup", {"FolderStartup"}, "NoViewStartup");
+        migrateValue("Others/ConfirmDeletePage", {"true"}, "false");
+        migrateValue("Appearance/UiTheme", {"Default"}, "Flat");
+
+        migrateKey("actionNextPage", "L, Right, Space", "L, Right, Space, D");
+        migrateKey("actionPrevPage", "H, Left, Backspace", "H, Left, Backspace, A");
+        migrateKey("actionZoomIn", "K, Num++", "K, Num++, Up, W");
+        migrateKey("actionZoomOut", "J, Num+-", "J, Num+-, Down, S");
+        // Q and W are used for deleting and zooming
+        migrateKey("actionLoadBookmark", "Q", "");
+        migrateKey("actionSaveBookmark", "W", "");
+        migrateKey("actionRecyclePage", "Del", "Del, Q");
+        // F toggles fitting like M (it was given to 'Fit to window' by some settings)
+        migrateKey("actionFitToWindow", "F", "");
+        migrateKey("actionFitting", "M, F12, Num+*", "F, M, F12, Num+*");
+    }
+    if(revision < 2) {
+        // Esc does not close the window any more, it is used by 'Exit Fullscreen'
+        migrateKey("actionExitApplicationOrFullscreen", "Esc", "");
+    }
 
     m_settings->setValue("Others/SettingsRevision", QV_SETTINGS_REVISION);
     m_settings->sync();
@@ -440,6 +451,11 @@ void QVApplication::setUiTheme(QString uiTheme)
     }
     m_uiTheme = uiTheme;
     QString styleSheet = QString::fromUtf8(file.readAll());
+    // The themes are designed on Fusion, so that they look the same (and as compact) on every OS.
+    // Native styles (e.g. windows11) have larger margins in toolbars and menus
+    QString styleName = uiTheme == "Default" ? m_nativeStyleName : QString("Fusion");
+    if(style()->name().compare(styleName, Qt::CaseInsensitive) != 0)
+        QApplication::setStyle(styleName);
     QApplication::setStyleSheet(styleSheet);
 
     // A theme can specify the color of the toolbar icons with a comment like "/* icon-color: #dddddd */"
@@ -455,14 +471,12 @@ QIcon QVApplication::flatIcon(const QString &name)
     if(!renderer.isValid())
         return icon;
     // several sizes for the normal/large toolbar and high DPI screens
-    for(int size : {16, 20, 24, 32, 40, 48, 64, 80}) {
+    for(int size : {16, 20, 24, 32, 40, 48, 64, 80, 96}) {
         QPixmap pixmap(size, size);
         pixmap.fill(Qt::transparent);
         QPainter painter(&pixmap);
         painter.setRenderHint(QPainter::Antialiasing);
-        // the same margin as the former 32px icons (2px), so the icons look as large as before
-        qreal margin = size / 16.0;
-        renderer.render(&painter, QRectF(margin, margin, size - 2*margin, size - 2*margin));
+        renderer.render(&painter, QRectF(0, 0, size, size));
         painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
         painter.fillRect(pixmap.rect(), m_iconColor);
         painter.end();

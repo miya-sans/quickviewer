@@ -44,6 +44,14 @@ public:
         }
     }
 
+    /**
+     * @brief setMaxSize changes the number of cached objects, the oldest ones are removed if needed
+     */
+    void setMaxSize(int maxsize) {
+        m_maxSize = maxsize;
+        while(size() > m_maxSize && !m_newerOrders.isEmpty())
+            trash(m_cache.take(m_newerOrders.takeLast()));
+    }
     int size() const { return m_cache.size(); }
     int count() const { return m_cache.size(); }
     bool empty() const { return m_cache.empty(); }

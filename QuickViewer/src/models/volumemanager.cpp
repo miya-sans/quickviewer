@@ -245,6 +245,7 @@ void VolumeManager::on_ready()
     default:
         break;
     }
+    limitPrefetchByMemory(offsets);
     foreach (const int of, offsets) {
         int cnt = m_cnt+of;
         if(cnt < 0 || cnt >= m_filelist.size())
@@ -275,6 +276,43 @@ void VolumeManager::on_ready()
         }
     }
     m_currentCache = m_imageCache.object(m_cnt);
+}
+
+// Memory for the images read ahead and cached. e.g. 7 images of 7224x4064 (112MB each) on 64bit
+#ifdef Q_PROCESSOR_X86_64
+#define PREFETCH_MEMORY_BUDGET (800LL*1024*1024)
+#else
+#define PREFETCH_MEMORY_BUDGET (300LL*1024*1024)
+#endif
+// the current page, the next ones for the dual view and the previous one are always read
+#define MIN_PREFETCH_IMAGES 4
+
+void VolumeManager::limitPrefetchByMemory(QList<int>& offsets)
+{
+    int count;
+    if(m_imageCache.contains(m_cnt) && m_imageCache.object(m_cnt).isFinished()) {
+        // estimate the size of the images in the volume from the current one
+        const ImageContent ic = m_imageCache.object(m_cnt).result();
+        qint64 bytes = ic.Image.sizeInBytes() + ic.ResizedImage.sizeInBytes();
+        count = bytes > 0 ? (int)qMax<qint64>(MIN_PREFETCH_IMAGES, PREFETCH_MEMORY_BUDGET / bytes) : offsets.size();
+        m_imageCache.setMaxSize(qBound(MIN_PREFETCH_IMAGES, count, qApp->MaxImagesCache()));
+    } else {
+        // the size is unknown until the current image is loaded, the rest is read ahead at the next page
+        count = MIN_PREFETCH_IMAGES;
+    }
+    if(count >= offsets.size())
+        return;
+    // keep the nearest pages (the next one before the previous one), in the original order
+    QList<int> nearest = offsets;
+    std::stable_sort(nearest.begin(), nearest.end(), [](int a, int b) {
+        return qAbs(a) != qAbs(b) ? qAbs(a) < qAbs(b) : a > b;
+    });
+    nearest = nearest.mid(0, count);
+    QMutableListIterator<int> it(offsets);
+    while(it.hasNext()) {
+        if(!nearest.contains(it.next()))
+            it.remove();
+    }
 }
 
 const ImageContent VolumeManager::getIndexedImageContent(int idx)

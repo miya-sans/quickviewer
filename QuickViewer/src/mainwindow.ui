@@ -714,6 +714,11 @@
     <string extracomment="Function that cancels it while full screen is displayed and terminates the application otherwise">ExitApplicationOrFullscreen</string>
    </property>
   </action>
+  <action name="actionExitFullscreen">
+   <property name="text">
+    <string extracomment="Function that cancels full screen (or closes the catalog), but never terminates the application">Exit Fullscreen</string>
+   </property>
+  </action>
   <action name="actionShowToolBar">
    <property name="checkable">
     <bool>true</bool>

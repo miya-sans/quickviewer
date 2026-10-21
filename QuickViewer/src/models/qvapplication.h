@@ -492,6 +492,10 @@ private:
     // Appearance
     QString m_uiTheme;
     QColor m_iconColor;
+    /**
+     * @brief m_nativeStyleName the style of the OS, used by the "Default" theme
+     */
+    QString m_nativeStyleName;
     QString m_copyDestinationFolder;
     QStringList m_recentCopyDestinationFolders;
 

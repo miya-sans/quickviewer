@@ -23,11 +23,12 @@ MainWindowForWindows::MainWindowForWindows(QWidget *parent)
 
 bool MainWindowForWindows::moveToTrush(QString path)
 {
-    WCHAR from[ MAX_PATH+2048 ] = {0};
-    path.toWCharArray( from );
+    // pFrom must be terminated with two null characters, and the path may be longer than MAX_PATH
+    std::wstring from = QDir::toNativeSeparators(path).toStdWString();
+    from.push_back(L'\0');
     SHFILEOPSTRUCT fileop = {0};
     fileop.wFunc = FO_DELETE;
-    fileop.pFrom = from;
+    fileop.pFrom = from.c_str();
     fileop.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
     int rv = SHFileOperation( &fileop );
     if( 0 != rv ){
