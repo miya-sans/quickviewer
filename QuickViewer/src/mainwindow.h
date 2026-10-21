@@ -84,6 +84,7 @@ protected:
 //    void mousePressEvent(QMouseEvent *e) override;
     void closeEvent(QCloseEvent *e) override;
     void resizeEvent(QResizeEvent *e) override;
+    void changeEvent(QEvent *e) override;
     void on_pageNolongerNeeded_triggered();
 	void touchEvent(QTouchEvent* e);
 
@@ -231,10 +232,36 @@ protected:
      */
     void resetIcons();
     /**
-     * @brief resetStatusLabel shows the information of the image (m_pageCaption) on the right of the menu bar,
+     * @brief resetStatusLabel shows the information of the image (m_pageCaption) on the right of the bottom bar,
      * shortened to the free space
      */
     void resetStatusLabel();
+    /**
+     * @brief updateBottomBar shows the page number, the page slider and the information of the image
+     * in the bottom bar as configured
+     */
+    void updateBottomBar();
+    /**
+     * @brief restoreWindowGeometry restores the size, position and maximized state of the last window
+     */
+    void restoreWindowGeometry();
+    /**
+     * @brief updateTitleBar is called when the menu bar is shown or hidden, or the window state changes.
+     * On Windows the menu bar is also the title bar
+     */
+    virtual void updateTitleBar() {}
+    /**
+     * @brief setWindowButtonsVisible shows the minimize, maximize and close buttons on the right of the menu bar
+     */
+    void setWindowButtonsVisible(bool visible);
+    /**
+     * @brief resetWindowButtons sets the icons of the window buttons, the maximize button restores a maximized window
+     */
+    void resetWindowButtons();
+    /**
+     * @brief resetMenuBarCorner makes the right of the menu bar as high as the menus, so that the window buttons fill it
+     */
+    void resetMenuBarCorner();
     /**
      * @brief showStatusText shows a message in place of the information of the image
      */
@@ -268,15 +295,14 @@ protected:
     BrightnessWindow* m_brightnessWindow;
     ExifDialog* m_exifDialog;
     QToolButton* m_fullscreenButton;
+    QToolButton* m_minimizeButton;
+    QToolButton* m_maximizeButton;
+    QToolButton* m_closeButton;
     ToastNotification* m_toast;
     /**
      * @brief m_geometryBeforeFullscreen window geometry saved when closed in fullscreen
      */
     QByteArray m_geometryBeforeFullscreen;
-    /**
-     * @brief m_pageBarAction the page slider at the end of the toolbar (there is no bar at the bottom)
-     */
-    QAction* m_pageBarAction;
     uint m_menubarFontSize;
 	uint m_pageSliderHeight;
 };

@@ -380,7 +380,7 @@ QString QVApplication::getDefaultPictureFolderPath()
 }
 
 // Revision of the settings file. Files without it were saved with the original defaults of QuickViewer
-#define QV_SETTINGS_REVISION 3
+#define QV_SETTINGS_REVISION 4
 
 void QVApplication::migrateSettings()
 {
@@ -429,6 +429,10 @@ void QVApplication::migrateSettings()
         // fitting enlarges images smaller than the window, and the window is restored like web browsers
         migrateValue("View/DontEnlargeSmallImagesOnFitting", {"true"}, "false");
         migrateValue("WindowState/RestoreWindowState", {"false"}, "true");
+    }
+    if(revision < 4) {
+        // the page number moved next to the page slider, the information of the image does not repeat it
+        migrateValue("View/StatusTextFormat", {"%p (%n)[%s(%m)] %f %2| %p [%s(%m)] %f"}, QV_STATUSBAR_FORMAT);
     }
 
     m_settings->setValue("Others/SettingsRevision", QV_SETTINGS_REVISION);
