@@ -17,14 +17,6 @@ CopyFolderDialog::CopyFolderDialog(QWidget *parent, const QString &folder)
     m_pathEdit->setClearButtonEnabled(true);
     m_pathEdit->selectAll();
 
-    // complete folder names while typing
-    QFileSystemModel* model = new QFileSystemModel(this);
-    model->setFilter(QDir::AllDirs | QDir::NoDotAndDotDot | QDir::Drives);
-    model->setRootPath(QString());
-    QCompleter* completer = new QCompleter(model, this);
-    completer->setCaseSensitivity(Qt::CaseInsensitive);
-    m_pathEdit->setCompleter(completer);
-
     QPushButton* browseButton = new QPushButton(tr("Browse...", "Button to open the folder picker of 'Copy to Folder'"), this);
     browseButton->setAutoDefault(false);
 
