@@ -126,6 +126,8 @@ SOURCES += \
     src/renamedialog.cpp \
     src/widgets/flowlayout.cpp \
     src/widgets/pageslider.cpp \
+    src/widgets/toastnotification.cpp \
+    src/widgets/copyfolderdialog.cpp \
     src/qlanguageselector/qlanguageselector.cpp \
     src/qnamedpipe/qnamedpipe.cpp \
     src/qfullscreenframe/qinnerframe.cpp \
@@ -170,6 +172,8 @@ HEADERS  += \
     src/stdafx.h \
     src/widgets/flowlayout.h \
     src/widgets/pageslider.h \
+    src/widgets/toastnotification.h \
+    src/widgets/copyfolderdialog.h \
     src/qlanguageselector/qlanguageselector.h \
     src/qnamedpipe/qnamedpipe.h \
     src/qfullscreenframe/qinnerframe.h \

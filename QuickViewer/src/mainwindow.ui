@@ -223,6 +223,9 @@
    <addaction name="actionShowCatalog"/>
    <addaction name="actionShowRetouchWindow"/>
    <addaction name="separator"/>
+   <addaction name="actionCopyToFolder"/>
+   <addaction name="actionRecyclePage"/>
+   <addaction name="separator"/>
    <addaction name="actionRotate"/>
    <addaction name="actionZoomIn"/>
    <addaction name="actionZoomOut"/>
@@ -395,6 +398,8 @@
      </property>
      <addaction name="actionCopyPage"/>
      <addaction name="actionCopyFile"/>
+     <addaction name="actionCopyToFolder"/>
+     <addaction name="actionSetCopyFolder"/>
      <addaction name="actionRecyclePage"/>
      <addaction name="actionRenameImageFile"/>
      <addaction name="actionMailAttachment"/>
@@ -466,6 +471,10 @@
     </widget>
     <addaction name="actionRotate"/>
     <addaction name="actionShowRetouchWindow"/>
+    <addaction name="separator"/>
+    <addaction name="actionCopyToFolder"/>
+    <addaction name="actionSetCopyFolder"/>
+    <addaction name="actionRecyclePage"/>
     <addaction name="separator"/>
     <addaction name="actionZoomIn"/>
     <addaction name="actionZoomOut"/>
@@ -822,6 +831,16 @@
   <action name="actionCopyFile">
    <property name="text">
     <string extracomment="Menu to copy currently displayed image file on Explorer">Copy File to clipboard</string>
+   </property>
+  </action>
+  <action name="actionCopyToFolder">
+   <property name="text">
+    <string extracomment="Menu to copy the currently displayed image file into the folder selected with 'Set Copy Folder'">&amp;Copy to Folder</string>
+   </property>
+  </action>
+  <action name="actionSetCopyFolder">
+   <property name="text">
+    <string extracomment="Menu to select the folder used by 'Copy to Folder'">Set Copy &amp;Folder...</string>
    </property>
   </action>
   <action name="actionRotate">

@@ -1,6 +1,16 @@
 <RCC>
     <qresource prefix="/">
         <file>themes/Dark.qss</file>
+        <file>themes/Flat.qss</file>
+        <file>themes/flat/branch-closed.svg</file>
+        <file>themes/flat/branch-open.svg</file>
+        <file>themes/flat/check.svg</file>
+        <file>themes/flat/down-disabled.svg</file>
+        <file>themes/flat/down.svg</file>
+        <file>themes/flat/extension.svg</file>
+        <file>themes/flat/radio-checked.svg</file>
+        <file>themes/flat/up-disabled.svg</file>
+        <file>themes/flat/up.svg</file>
         <file>themes/Default.qss</file>
         <file>themes/dark/arrow_down.svg</file>
         <file>themes/dark/arrow_down_disabled.svg</file>

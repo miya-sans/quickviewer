@@ -14,6 +14,7 @@ class FolderWindow;
 class CatalogWindow;
 class ThumbnailManager;
 class BrightnessWindow;
+class ToastNotification;
 
 class MainWindow : public QMainWindow
 {
@@ -176,6 +177,8 @@ public slots:
     void onActionContextMenu_triggered();
     void onActionOpenfolder_triggered();
     void onActionRecyclePage_triggered();
+    void onActionCopyToFolder_triggered();
+    void onActionSetCopyFolder_triggered();
     void onActionDeletePage_triggered();
     void onActionExitApplicationOrFullscreen_triggered();
     void onActionMailAttachment_triggered();
@@ -217,6 +220,16 @@ private slots:
 
 
 protected:
+    /**
+     * @brief selectCopyDestinationFolder lets the user select the folder for 'Copy to Folder' and remembers it
+     * @return the selected folder, or empty if canceled
+     */
+    QString selectCopyDestinationFolder();
+    /**
+     * @brief resetIcons sets monochrome icons colored for the current theme to the actions
+     */
+    void resetIcons();
+
     Ui::MainWindow *ui;
     bool m_viewerWindowStateMaximized;
     bool m_sliderChanging;
@@ -241,6 +254,7 @@ protected:
     BrightnessWindow* m_brightnessWindow;
     ExifDialog* m_exifDialog;
     QToolButton* m_fullscreenButton;
+    ToastNotification* m_toast;
     uint m_menubarFontSize;
 	uint m_pageSliderHeight;
 };

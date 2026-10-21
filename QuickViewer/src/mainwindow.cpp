@@ -19,6 +19,8 @@
 #include "fileloader.h"
 #include "qinnerframe.h"
 #include "brightnesswindow.h"
+#include "toastnotification.h"
+#include "copyfolderdialog.h"
 
 #ifdef Q_OS_WIN
 #include "fileassocdialog.h"
@@ -36,6 +38,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_catalogWindow(nullptr)
     , m_brightnessWindow(nullptr)
     , m_exifDialog(nullptr)
+    , m_toast(nullptr)
 {
     ui->setupUi(this);
     m_menubarFontSize = ui->menuBar->font().pointSize();
@@ -105,6 +108,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_fullscreenButton, SIGNAL(clicked(bool)), this, SLOT(onActionFullscreen_triggered()));
     connect(ui->actionFullscreen, SIGNAL(toggled(bool)), m_fullscreenButton, SLOT(setChecked(bool)));
     ui->menuBar->setCornerWidget(m_fullscreenButton);
+    resetIcons();
+
+    // 'Copy to Folder' shows where the image was copied with this notification
+    m_toast = new ToastNotification(ui->graphicsView);
+    connect(ui->actionCopyToFolder, SIGNAL(triggered()), this, SLOT(onActionCopyToFolder_triggered()));
+    connect(ui->actionSetCopyFolder, SIGNAL(triggered()), this, SLOT(onActionSetCopyFolder_triggered()));
 
     ui->actionLargeToolbarIcons->setChecked(qApp->LargeToolbarIcons());
     ui->actionLargeToolbarIcons->triggered(qApp->LargeToolbarIcons());
@@ -1479,11 +1488,14 @@ void MainWindow::onActionOpenMouseConfig_triggered()
 void MainWindow::onActionOpenOptionsDialog_triggered()
 {
     OptionsDialog dialog(this);
+    QString theme = qApp->UiTheme();
     QColor back = qApp->BackgroundColor();
     QColor back2 = qApp->BackgroundColor2();
     bool checkered = qApp->UseCheckeredPattern();
     if(dialog.exec() == QDialog::Accepted) {
         dialog.reflectResults();
+        if(theme != qApp->UiTheme())
+            resetIcons();
         if(m_pageManager.size() > 0)
             onPageManager_pageChanged();
         if(back != qApp->BackgroundColor()
@@ -1636,6 +1648,95 @@ void MainWindow::onActionRecyclePage_triggered()
     if(moveToTrush(path))  {
         m_pageManager.reloadVolume();
     }
+}
+
+void MainWindow::resetIcons()
+{
+    static const struct { const char* action; const char* icon; } actionIcons[] = {
+        {"actionPrevPage", "previous"},
+        {"actionNextPage", "next"},
+        {"actionFastBackward", "previous-fast"},
+        {"actionFastForward", "next-fast"},
+        {"actionFirstPage", "first"},
+        {"actionLastPage", "last"},
+        {"actionShowSubfolders", "subfolders"},
+        {"actionSaveBookmark", "star-off"},
+        {"actionLoadBookmark", "star-on"},
+        {"actionManageBookmarks", "bars"},
+        {"actionPrevVolume", "volume-previous"},
+        {"actionNextVolume", "volume-next"},
+        {"actionOpenFolder", "open"},
+        {"actionShowFolder", "dir"},
+        {"actionShowCatalog", "rects"},
+        {"actionShowRetouchWindow", "sliders"},
+        {"actionCopyToFolder", "copy"},
+        {"actionSetCopyFolder", "open"},
+        {"actionRecyclePage", "trash"},
+        {"actionRotate", "rotate-cw"},
+        {"actionZoomIn", "zoom-in"},
+        {"actionZoomOut", "zoom-out"},
+        {"actionLoupeTool", "find"},
+        {"actionFitting", "zoom-reset"},
+        {"actionFitToWindow", "zoom-reset"},
+        {"actionFitToWidth", "fit-width"},
+        {"actionDualView", "dualview"},
+        {"actionShowPanelSeparateWindow", "export"},
+        {"actionStayOnTop", "pin"},
+        {"actionFullscreen", "fullscreen"},
+        {"actionSlideShow", "play"},
+        {"actionOpenKeyConfig", "settings"},
+        {"actionOpenExif", "info"},
+        {"actionCatalogViewIcon", "rects"},
+        {"actionCatalogViewIconNoText", "rects"},
+        {"actionCatalogViewList", "bars"},
+    };
+    for(const auto& ai : actionIcons) {
+        QAction* action = findChild<QAction*>(ai.action);
+        if(action)
+            action->setIcon(qApp->flatIcon(ai.icon));
+    }
+    m_fullscreenButton->setIcon(qApp->flatIcon("fullscreen"));
+}
+
+QString MainWindow::selectCopyDestinationFolder()
+{
+    QString current = qApp->CopyDestinationFolder();
+    if(current.isEmpty() || !QDir(current).exists())
+        current = m_pageManager.isFolder() ? m_pageManager.realVolumePath() : qApp->HomeFolderPath();
+    CopyFolderDialog dialog(this, current);
+    if(dialog.exec() != QDialog::Accepted || dialog.folder().isEmpty())
+        return QString();
+    qApp->setCopyDestinationFolder(dialog.folder());
+    return qApp->CopyDestinationFolder();
+}
+
+void MainWindow::onActionSetCopyFolder_triggered()
+{
+    QString folder = selectCopyDestinationFolder();
+    if(!folder.isEmpty())
+        m_toast->showMessage(tr("Images will be copied to", "Notification after the destination folder of 'Copy to Folder' is selected"), folder);
+}
+
+void MainWindow::onActionCopyToFolder_triggered()
+{
+    if(m_pageManager.currentPageCount() <= 0)
+        return;
+    QString folder = qApp->CopyDestinationFolder();
+    if(folder.isEmpty() || !QDir(folder).exists()) {
+        folder = selectCopyDestinationFolder();
+        if(folder.isEmpty())
+            return;
+    }
+    QStringList copiedFiles;
+    QString error = m_pageManager.copyCurrentPagesTo(folder, copiedFiles);
+    if(!error.isEmpty()) {
+        m_toast->showMessage(tr("Could not copy the image: %1", "Notification when 'Copy to Folder' failed").arg(error), folder);
+        return;
+    }
+    QString title = copiedFiles.size() == 1
+            ? tr("Copied \"%1\" to", "Notification after 'Copy to Folder'").arg(QFileInfo(copiedFiles[0]).fileName())
+            : tr("Copied %1 images to", "Notification after 'Copy to Folder' in dual view").arg(copiedFiles.size());
+    m_toast->showMessage(title, folder, copiedFiles.last());
 }
 
 void MainWindow::onActionDeletePage_triggered()

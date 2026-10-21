@@ -34,6 +34,13 @@ public:
      * The displayed image is kept if it still exists, otherwise the nearest remaining image is selected.
      */
     void reloadVolume();
+    /**
+     * @brief copyCurrentPagesTo copies the displayed images into the folder (images in archives are extracted).
+     * Existing files are not overwritten, the copies are renamed like "page01 (2).jpg"
+     * @param copiedFiles paths of the copied files
+     * @return error message, or empty if succeeded
+     */
+    QString copyCurrentPagesTo(const QString& folder, QStringList& copiedFiles);
 
     // Pages
     bool nextPage();

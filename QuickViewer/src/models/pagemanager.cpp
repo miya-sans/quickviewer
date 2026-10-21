@@ -259,6 +259,45 @@ void PageManager::reloadVolume()
     updateWatcher();
 }
 
+static QString uniqueFilePath(const QDir& dir, const QString& fileName)
+{
+    QFileInfo info(fileName);
+    QString path = dir.filePath(fileName);
+    for(int i = 2; QFileInfo::exists(path); i++) {
+        QString name = info.suffix().isEmpty()
+                ? QString("%1 (%2)").arg(info.completeBaseName()).arg(i)
+                : QString("%1 (%2).%3").arg(info.completeBaseName()).arg(i).arg(info.suffix());
+        path = dir.filePath(name);
+    }
+    return path;
+}
+
+QString PageManager::copyCurrentPagesTo(const QString &folder, QStringList &copiedFiles)
+{
+    if(!m_fileVolume || m_pages.isEmpty())
+        return tr("No image is displayed", "Error message of 'Copy to Folder'");
+    QDir dir(folder);
+    if(!dir.exists())
+        return tr("The folder does not exist", "Error message of 'Copy to Folder'");
+    foreach(const ImageContent& ic, m_pages) {
+        QString dest = uniqueFilePath(dir, QFileInfo(ic.Path).fileName());
+        bool copied;
+        if(m_fileVolume->isArchive()) {
+            QByteArray bytes = m_fileVolume->loadByteArrayByName(ic.Path);
+            QFile file(dest);
+            copied = !bytes.isEmpty() && file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
+            if(!copied && file.exists())
+                file.remove();
+        } else {
+            copied = QFile::copy(m_fileVolume->getPathByFileName(ic.Path), dest);
+        }
+        if(!copied)
+            return tr("Could not write \"%1\"", "Error message of 'Copy to Folder'").arg(QDir::toNativeSeparators(dest));
+        copiedFiles << dest;
+    }
+    return QString();
+}
+
 static QStringList listImagesInFolder(const QString& path)
 {
     QScopedPointer<IFileLoader> loader(qApp->ShowSubfolders()

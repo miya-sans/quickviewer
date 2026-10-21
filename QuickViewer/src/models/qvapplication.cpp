@@ -9,6 +9,7 @@
 #include "qvapplication.h"
 #include "qv_init.h"
 #include "ui_mainwindow.h"
+#include <QSvgRenderer>
 
 QVApplication::QVApplication(int &argc, char **argv)
     : QApplication(argc, argv)
@@ -166,12 +167,14 @@ void QVApplication::registDefaultKeyMap()
     m_keyActions.addDefaultKey("actionShowMenuBar", QKeySequence("F9"));
     m_keyActions.addDefaultKey("actionDualView", QKeySequence("Y, F10"));
     m_keyActions.addDefaultKey("actionFullscreen", QKeySequence("F11"));
-    m_keyActions.addDefaultKey("actionFitting", QKeySequence("M, F12, Num+*"));
+    m_keyActions.addDefaultKey("actionFitting", QKeySequence("F, M, F12, Num+*"));
     m_keyActions.addDefaultKey("actionRotate", QKeySequence("R"));
-    m_keyActions.addDefaultKey("actionRecyclePage", QKeySequence("Del"));
+    m_keyActions.addDefaultKey("actionRecyclePage", QKeySequence("Del, Q"));
     m_keyActions.addDefaultKey("actionDeletePage", QKeySequence("Shift+Del"));
     m_keyActions.addDefaultKey("actionCopyPage", QKeySequence("Ctrl+C"));
     m_keyActions.addDefaultKey("actionCopyFile", QKeySequence("Ctrl+Shift+C"));
+    m_keyActions.addDefaultKey("actionCopyToFolder", QKeySequence("E"));
+    m_keyActions.addDefaultKey("actionSetCopyFolder", QKeySequence("Shift+E"));
     m_keyActions.addDefaultKey("actionMaximizeOrNormal", QKeySequence("Return, Num+Enter"));
 }
 
@@ -281,6 +284,8 @@ void QVApplication::registActions(Ui::MainWindow *ui)
     m_keyActions.registAction("actionOpenExif", ui->actionOpenExif, groupName);
     m_keyActions.registAction("actionCopyPage", ui->actionCopyPage, groupName);
     m_keyActions.registAction("actionCopyFile", ui->actionCopyFile, groupName);
+    m_keyActions.registAction("actionCopyToFolder", ui->actionCopyToFolder, groupName);
+    m_keyActions.registAction("actionSetCopyFolder", ui->actionSetCopyFolder, groupName);
     m_keyActions.registAction("actionRecyclePage", ui->actionRecyclePage, groupName);
     m_keyActions.registAction("actionDeletePage", ui->actionDeletePage, groupName);
     m_keyActions.registAction("actionMailAttachment", ui->actionMailAttachment, groupName);
@@ -371,8 +376,98 @@ QString QVApplication::getDefaultPictureFolderPath()
     return path;
 }
 
+// Revision of the settings file. Files without it were saved with the original defaults of QuickViewer
+#define QV_SETTINGS_REVISION 1
+
+void QVApplication::migrateSettings()
+{
+    if(m_settings->value("Others/SettingsRevision", 0).toInt() >= QV_SETTINGS_REVISION)
+        return;
+    // Only values that are still the former defaults are changed, so customized values are kept
+    auto migrateValue = [&](const QString& key, const QStringList& formers, const QString& current) {
+        if(m_settings->contains(key) && formers.contains(m_settings->value(key).toString(), Qt::CaseInsensitive))
+            m_settings->setValue(key, current);
+    };
+    migrateValue("View/BackgroundColor", {"797979", "ff797979", "0x797979"}, "ff000000");
+    migrateValue("View/UseCheckeredPattern", {"true"}, "false");
+    migrateValue("View/ShowOptionViewOnStartup", {"FolderStartup"}, "NoViewStartup");
+    migrateValue("Others/ConfirmDeletePage", {"true"}, "false");
+    migrateValue("Appearance/UiTheme", {"Default"}, "Flat");
+
+    auto migrateKey = [&](const QString& action, const QString& former, const QString& current) {
+        QString key = "KeyConfig/" + action;
+        if(m_settings->contains(key) && QKeySequence(m_settings->value(key).toString()) == QKeySequence(former))
+            m_settings->setValue(key, current);
+    };
+    migrateKey("actionNextPage", "L, Right, Space", "L, Right, Space, D");
+    migrateKey("actionPrevPage", "H, Left, Backspace", "H, Left, Backspace, A");
+    migrateKey("actionZoomIn", "K, Num++", "K, Num++, Up, W");
+    migrateKey("actionZoomOut", "J, Num+-", "J, Num+-, Down, S");
+    // Q and W are used for deleting and zooming
+    migrateKey("actionLoadBookmark", "Q", "");
+    migrateKey("actionSaveBookmark", "W", "");
+    migrateKey("actionRecyclePage", "Del", "Del, Q");
+    // F toggles fitting like M (it was given to 'Fit to window' by some settings)
+    migrateKey("actionFitToWindow", "F", "");
+    migrateKey("actionFitting", "M, F12, Num+*", "F, M, F12, Num+*");
+
+    m_settings->setValue("Others/SettingsRevision", QV_SETTINGS_REVISION);
+    m_settings->sync();
+}
+
+void QVApplication::setCopyDestinationFolder(QString copyDestinationFolder)
+{
+    m_copyDestinationFolder = copyDestinationFolder;
+    // saved immediately so that it is kept even if the application does not exit normally
+    m_settings->setValue("File/CopyDestinationFolder", m_copyDestinationFolder);
+    m_settings->sync();
+}
+
+void QVApplication::setUiTheme(QString uiTheme)
+{
+    QFile file(":/themes/"+uiTheme+".qss"); // Resource files
+    if(!file.open(QFile::ReadOnly)) {
+        uiTheme = "Flat";
+        file.setFileName(":/themes/"+uiTheme+".qss");
+        file.open(QFile::ReadOnly);
+    }
+    m_uiTheme = uiTheme;
+    QString styleSheet = QString::fromUtf8(file.readAll());
+    QApplication::setStyleSheet(styleSheet);
+
+    // A theme can specify the color of the toolbar icons with a comment like "/* icon-color: #dddddd */"
+    static const QRegularExpression iconColorExp("icon-color:\\s*(#[0-9a-fA-F]{3,8})");
+    QRegularExpressionMatch match = iconColorExp.match(styleSheet);
+    m_iconColor = match.hasMatch() ? QColor(match.captured(1)) : QApplication::palette().color(QPalette::ButtonText);
+}
+
+QIcon QVApplication::flatIcon(const QString &name)
+{
+    QSvgRenderer renderer(QString(":/icons/flat/%1.svg").arg(name));
+    QIcon icon;
+    if(!renderer.isValid())
+        return icon;
+    // several sizes for the normal/large toolbar and high DPI screens
+    for(int size : {16, 20, 24, 32, 40, 48, 64, 80}) {
+        QPixmap pixmap(size, size);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        // the same margin as the former 32px icons (2px), so the icons look as large as before
+        qreal margin = size / 16.0;
+        renderer.render(&painter, QRectF(margin, margin, size - 2*margin, size - 2*margin));
+        painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        painter.fillRect(pixmap.rect(), m_iconColor);
+        painter.end();
+        icon.addPixmap(pixmap);
+    }
+    return icon;
+}
+
 void QVApplication::loadSettings()
 {
+    migrateSettings();
+
     bool bRightSideBookDefault = QLocale::system().language() == QLocale::Japanese;
 
     // View
@@ -445,7 +540,7 @@ void QVApplication::loadSettings()
     m_loupeTool = m_settings->value("LoupeTool", false).toBool();
     m_scrollWithCursorWhenZooming = m_settings->value("ScrollWithCursorWhenZooming", true).toBool();
     {
-        QString showOptionstring = m_settings->value("ShowOptionViewOnStartup", "FolderStartup").toString();
+        QString showOptionstring = m_settings->value("ShowOptionViewOnStartup", "NoViewStartup").toString();
         int enumIdx = qvEnums::staticMetaObject.indexOfEnumerator("OptionViewOnStartup");
         m_showOptionViewOnStartup = (qvEnums::OptionViewOnStartup)qvEnums::staticMetaObject.enumerator(enumIdx)
                 .keysToValue(showOptionstring.toLatin1().data());
@@ -474,6 +569,7 @@ void QVApplication::loadSettings()
     m_dontSavingHistory  = m_settings->value("DontSavingHistory", false).toBool();
     m_extractSolidArchiveToTemporaryDir = m_settings->value("ExtractSolidArchiveToTemporaryDir", true).toBool();
     m_lastOpenedFolderPath = m_settings->value("LastOpenedFolderPath", "").toString();
+    m_copyDestinationFolder = m_settings->value("CopyDestinationFolder", "").toString();
     m_settings->endGroup();
 
     // Folder
@@ -549,13 +645,7 @@ void QVApplication::loadSettings()
     m_settings->endGroup();
 
     m_settings->beginGroup("Appearance");
-    m_uiTheme = m_settings->value("UiTheme", "Default").toString();
-    //QString themeFilePath = getApplicationFilePath(":/themes/"+m_uiTheme+".qss"); //Local files
-    QString themeFilePath(":/themes/"+m_uiTheme+".qss"); // Resource files
-    QFile File(themeFilePath);
-    File.open(QFile::ReadOnly);
-    QString styleSheet = QString(File.readAll());
-    QApplication::setStyleSheet(styleSheet);
+    setUiTheme(m_settings->value("UiTheme", "Flat").toString());
     m_settings->endGroup();
 
     m_bookshelfManager = new BookProgressManager(this);
@@ -652,6 +742,7 @@ void QVApplication::saveSettings()
     m_settings->setValue("DontSavingHistory", m_dontSavingHistory);
     m_settings->setValue("ExtractSolidArchiveToTemporaryDir", m_extractSolidArchiveToTemporaryDir);
     m_settings->setValue("LastOpenedFolderPath", m_lastOpenedFolderPath);
+    m_settings->setValue("CopyDestinationFolder", m_copyDestinationFolder);
     m_settings->endGroup();
 
     m_settings->beginGroup("Folder");
