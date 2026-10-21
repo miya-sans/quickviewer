@@ -141,7 +141,7 @@ QRect PageContent::setPageLayoutFitting(QRect viewport, PageContent::PageAlign a
             ? currentSize.scaled(viewport1.size(), Qt::KeepAspectRatio)
             : QSize(viewport1.width(), currentSize.height()*viewport1.width()/currentSize.width()) ;
     qreal scale = DrawScale = 1.0*newsize.width()/currentSize.width();
-    NotationalScale = scale;
+    NotationalScale = scale * sourceRatio();
     if(loupe > 1.0) {
         return setPageLayoutManual(viewport, align, scale*loupe, rotateOffset, true);
     }
@@ -197,7 +197,7 @@ QRect PageContent::setPageLayoutManual(QRect viewport, PageContent::PageAlign al
         currentSize = QSize(currentSize.width()/2, currentSize.height());
     QSize newsize = currentSize * scale;
     DrawScale = scale;
-    NotationalScale = scale;
+    NotationalScale = scale * sourceRatio();
 
     QPoint of = Offset(rotateOffset);
     of *= scale;
@@ -383,6 +383,13 @@ void PageContent::dispose()
         delete GTextSurface;
         GTextSurface = nullptr;
     }
+}
+
+qreal PageContent::sourceRatio() const
+{
+    if(Ic.Image.isNull() || Ic.BaseSize.width() <= 0)
+        return 1.0;
+    return 1.0 * Ic.Image.width() / Ic.BaseSize.width();
 }
 
 void PageContent::resetScene(QGraphicsScene *)

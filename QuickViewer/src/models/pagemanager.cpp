@@ -15,6 +15,7 @@ PageManager::PageManager(QObject* parent)
     , m_volumes(qApp->MaxVolumesCache())
     , m_fileVolume(nullptr)
     , m_imaveView(nullptr)
+    , m_loadGeneration(0)
 //    , m_builderForAssoc("", this)
 {
     installEventFilter(this);
@@ -26,6 +27,8 @@ PageManager::PageManager(QObject* parent)
 
 bool PageManager::loadVolume(QString path, bool coverOnly)
 {
+    // Discard any volume still being built in the background by loadVolumeWithFile()
+    m_loadGeneration++;
     if(m_fileVolume && m_pages.size() == 2) {
         m_fileVolume->prevPage();
     }
@@ -64,21 +67,40 @@ bool PageManager::loadVolumeWithFile(QString path, bool prohibitProhibit2Page)
         return result;
     }
 
+    int generation = ++m_loadGeneration;
     QtConcurrent::run([=]{
         VolumeManagerBuilder builder(qpath, this);
         VolumeManager* newer = builder.buildForAssoc();
-        if(!newer) {
-            return loadVolume(QString("%1::%2").arg(pathbase).arg(qpath.mid(pathbase.length()+1)));
-        }
-        emit volumeChanged("");
-        m_volumes.insert(pathbase, QtConcurrent::run([=]{return newer;}));
-        m_fileVolume = newer;
-        clearPages();
-        m_currentPage = newer->pageCount();
-        qApp->postEvent(this, new ReloadedEvent());
-        return true;
+        // The volume cache and the current volume are only touched on the main thread
+        QMetaObject::invokeMethod(this, [=]{
+            onVolumeBuiltWithFile(newer, pathbase, qpath, generation);
+        }, Qt::QueuedConnection);
     });
     return true;
+}
+
+void PageManager::onVolumeBuiltWithFile(VolumeManager* newer, QString pathbase, QString qpath, int generation)
+{
+    if(generation != m_loadGeneration) {
+        // another volume has been opened in the meantime
+        delete newer;
+        return;
+    }
+    if(!newer) {
+        loadVolume(QString("%1::%2").arg(pathbase).arg(qpath.mid(pathbase.length()+1)));
+        return;
+    }
+    emit volumeChanged("");
+    clearPages();
+    m_fileVolume = nullptr;
+    m_volumes.remove(pathbase);
+    m_volumes.insert(pathbase, QtConcurrent::run([newer]{return newer;}));
+    m_fileVolume = newer;
+    m_currentPage = newer->pageCount();
+    reloadCurrentPage(true);
+    emit pageChanged();
+    emit volumeChanged(m_fileVolume->volumePath());
+    updateWatcher();
 }
 
 
@@ -337,7 +359,7 @@ VolumeManager* PageManager::addVolumeCache(QString path, bool onlyCover, bool im
         VolumeManagerBuilder builder(path, this);
         VolumeManager* imm = builder.build(onlyCover);
         qDebug() << "addVolumeCache:imm" << imm;
-        m_volumes.insert(pathbase, QtConcurrent::run([&]{return passThrough(imm);}));
+        m_volumes.insert(pathbase, QtConcurrent::run([imm]{return imm;}));
     }
     QFuture<VolumeManager*> future = m_volumes.object(pathbase);
     if(!immediate && !future.isFinished())
@@ -355,7 +377,9 @@ VolumeManager* PageManager::addVolumeCache(QString path, bool onlyCover, bool im
         ((qApp->ShowSubfolders() && !newer->hasSubDirectories())
          || (!qApp->ShowSubfolders() && newer->hasSubDirectories()))) {
         qDebug() << qApp->ShowSubfolders() << newer->hasSubDirectories();
+        // remove() deletes the instance, so it must not be returned
         m_volumes.remove(pathbase);
+        return addVolumeCache(path, onlyCover, immediate);
     }
     m_volumes.retain(pathbase);
     qDebug() << "addVolumeCache:retain";
@@ -567,19 +591,6 @@ void PageManager::sort(qvEnums::ImageSortBy sortBy)
 
 bool PageManager::eventFilter(QObject *obj, QEvent *event)
 {
-    switch (event->type()) {
-    case ReloadedEventType:
-        if(!m_fileVolume)
-            return true;
-        reloadCurrentPage(true);
-        emit pageChanged();
-        emit volumeChanged(m_fileVolume->volumePath());
-        updateWatcher();
-        return true;
-
-    default:
-        break;
-    }
     return QObject::eventFilter(obj, event);
 }
 

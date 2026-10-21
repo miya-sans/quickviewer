@@ -11,9 +11,8 @@ class VolumeManager;
  * This class holds various attributes of image files, such as file names and file sizes,
  * and provides a function to retrieve them when necessary.
  */
-class QvImageMetadata : QObject
+class QvImageMetadata
 {
-    Q_OBJECT
 public:
     QvImageMetadata(VolumeManager* volume, QString filename);
     QvImageMetadata(const QvImageMetadata& rhs)

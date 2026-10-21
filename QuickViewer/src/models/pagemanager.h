@@ -17,13 +17,6 @@ public:
     virtual QString currentPagePath()=0;
 };
 
-#define ReloadedEventType (QEvent::Type)(QEvent::Type::User + 50)
-
-class ReloadedEvent : public QEvent {
-public:
-    ReloadedEvent() : QEvent(ReloadedEventType) {}
-};
-
 
 class PageManager : public QObject, public PageManagerProtocol
 {
@@ -150,8 +143,8 @@ private slots:
 private:
     VolumeManager* addVolumeCache(QString path, bool onlyCover, bool immediate);
     VolumeManager* createVolume(QString path, bool onlyCover);
-    VolumeManager* passThrough(VolumeManager* vol) { return vol; }
     void setWatchedDirectories(const QStringList& dirs);
+    void onVolumeBuiltWithFile(VolumeManager* newer, QString pathbase, QString qpath, int generation);
     /**
      * @brief younger page number
      */
@@ -167,6 +160,7 @@ private:
     ImageView * m_imaveView;
 
     bool m_waitForReloaded;
+    int m_loadGeneration;
 
     // live update of the folder being viewed
     QFileSystemWatcher m_watcher;

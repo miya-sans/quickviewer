@@ -51,6 +51,7 @@ jobs:
           Copy-Item build\bin\QuickViewer.exe, build\bin\AssociateFilesWithQuickViewer.exe, build\lib\QSVGNative0.dll $dist
           Copy-Item Qt7z\Qt7z\windll\x64\7z.dll $dist
           Copy-Item README.md, LICENSE $dist
+          Copy-Item QuickViewer\quickviewer.ini $dist
           Copy-Item QuickViewer\translations\*.qm, QuickViewer\translations\languages.ini "$dist\translations"
           Copy-Item QuickViewer\database\schema.sql, QuickViewer\database\thumbnail.sqlite3.db "$dist\database"
           windeployqt --release --compiler-runtime "$dist\QuickViewer.exe"

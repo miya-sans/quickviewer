@@ -186,6 +186,10 @@ public:
     void resetScene(QGraphicsScene* scene);
     void checkInitialize();
     void dispose();
+    /**
+     * @brief sourceRatio ratio of the loaded image to the original image (less than 1.0 when shrunk on loading)
+     */
+    qreal sourceRatio() const;
 signals:
     void resizeFinished();
 public slots:

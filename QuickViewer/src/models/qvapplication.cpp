@@ -83,7 +83,12 @@ QVApplication::QVApplication(int &argc, char **argv)
 
     // Qt6 has a limit on loading large images, but this is inconvenient,
     // so we will relax this limit (and in the future make it a configurable value).
+#ifdef Q_PROCESSOR_X86_64
+    // Large images (e.g. 16 bits per channel) need more than 1GB while decoding
+    QImageReader::setAllocationLimit(4096);
+#else
     QImageReader::setAllocationLimit(1024);
+#endif
 }
 
 QVApplication::~QVApplication()
@@ -143,16 +148,16 @@ void QVApplication::registDefaultKeyMap()
 {
     // Default key configs
     m_keyActions.addDefaultKey("actionExitApplicationOrFullscreen", QKeySequence("Esc"));
-    m_keyActions.addDefaultKey("actionNextPage", QKeySequence("L, Right, Space"));
-    m_keyActions.addDefaultKey("actionPrevPage", QKeySequence("H, Left, Backspace"));
+    m_keyActions.addDefaultKey("actionNextPage", QKeySequence("L, Right, Space, D"));
+    m_keyActions.addDefaultKey("actionPrevPage", QKeySequence("H, Left, Backspace, A"));
     m_keyActions.addDefaultKey("actionFastForward", QKeySequence("Shift+L, Num+3"));
     m_keyActions.addDefaultKey("actionFastBackward", QKeySequence("Shift+H, Num+1"));
     m_keyActions.addDefaultKey("actionLastPage", QKeySequence("Ctrl+L, End"));
     m_keyActions.addDefaultKey("actionFirstPage", QKeySequence("Ctrl+H, Home"));
     m_keyActions.addDefaultKey("actionNextVolume", QKeySequence("Ctrl+J, PgDown, X"));
     m_keyActions.addDefaultKey("actionPrevVolume", QKeySequence("Ctrl+K, PgUp, Z"));
-    m_keyActions.addDefaultKey("actionZoomIn", QKeySequence("K, Num++"));
-    m_keyActions.addDefaultKey("actionZoomOut", QKeySequence("J, Num+-"));
+    m_keyActions.addDefaultKey("actionZoomIn", QKeySequence("K, Num++, Up, W"));
+    m_keyActions.addDefaultKey("actionZoomOut", QKeySequence("J, Num+-, Down, S"));
     m_keyActions.addDefaultKey("actionRenameImageFile", QKeySequence("F2"));
     m_keyActions.addDefaultKey("actionShowFolder", QKeySequence("F4"));
     m_keyActions.addDefaultKey("actionShowCatalog", QKeySequence("Ctrl+/, F6"));
@@ -167,8 +172,6 @@ void QVApplication::registDefaultKeyMap()
     m_keyActions.addDefaultKey("actionDeletePage", QKeySequence("Shift+Del"));
     m_keyActions.addDefaultKey("actionCopyPage", QKeySequence("Ctrl+C"));
     m_keyActions.addDefaultKey("actionCopyFile", QKeySequence("Ctrl+Shift+C"));
-    m_keyActions.addDefaultKey("actionLoadBookmark", QKeySequence("Q"));
-    m_keyActions.addDefaultKey("actionSaveBookmark", QKeySequence("W"));
     m_keyActions.addDefaultKey("actionMaximizeOrNormal", QKeySequence("Return, Num+Enter"));
 }
 
@@ -370,8 +373,6 @@ QString QVApplication::getDefaultPictureFolderPath()
 
 void QVApplication::loadSettings()
 {
-    bool bRightSideBookDefault = QLocale::system().language() == QLocale::Japanese;
-
     // View
     m_settings->beginGroup("View");
     {
@@ -389,7 +390,7 @@ void QVApplication::loadSettings()
     m_dualView = m_settings->value("DualView", false).toBool();
     m_stayOnTop = m_settings->value("StayOnTop", false).toBool();
 
-    m_rightSideBook = m_settings->value("RightSideBook", bRightSideBookDefault).toBool();
+    m_rightSideBook = m_settings->value("RightSideBook", false).toBool();
     m_wideImageAsOnePageInDualView = m_settings->value("WideImageAsOnePageInDualView", true).toBool();
     m_firstImageAsOnePageInDualView = m_settings->value("FirstImageAsOnePageInDualView", false).toBool();
     m_separatePagesWhenWideImage = m_settings->value("SeparatePagesWhenWideImage", false).toBool();
@@ -412,11 +413,11 @@ void QVApplication::loadSettings()
     m_maxVolumesCache = m_settings->value("MaxVolumesCache", 1).toInt();
     m_maxImagesCache = m_settings->value("MaxImagesCache", 6).toInt();
 #endif
-    m_backgroundColor = QColor(m_settings->value("BackgroundColor", "0x797979").toString().toUInt(nullptr, 16));
+    m_backgroundColor = QColor(m_settings->value("BackgroundColor", "0xff000000").toString().toUInt(nullptr, 16));
     m_backgroundColor2 = QColor(m_settings->value("BackgroundColor2", "0x5e5e5e").toString().toUInt(nullptr, 16));
-    m_useCheckeredPattern  = m_settings->value("UseCheckeredPattern", true).toBool();
+    m_useCheckeredPattern  = m_settings->value("UseCheckeredPattern", false).toBool();
     m_dontEnlargeSmallImagesOnFitting  = m_settings->value("DontEnlargeSmallImagesOnFitting", true).toBool();
-    m_showFullscreenSignage  = m_settings->value("ShowFullscreenSignage", false).toBool();
+    m_showFullscreenSignage  = m_settings->value("ShowFullscreenSignage", true).toBool();
     m_dontShrinkForLargeImage  = m_settings->value("DontShrinkForLargeImage", false).toBool();
 //    m_showFullscreenTitleBar = m_settings->value("ShowFullscreenTitleBar", true).toBool();
     m_useDirect2D = m_settings->value("UseDirect2D", false).toBool();
@@ -442,7 +443,7 @@ void QVApplication::loadSettings()
     m_loupeTool = m_settings->value("LoupeTool", false).toBool();
     m_scrollWithCursorWhenZooming = m_settings->value("ScrollWithCursorWhenZooming", true).toBool();
     {
-        QString showOptionstring = m_settings->value("ShowOptionViewOnStartup", "FolderStartup").toString();
+        QString showOptionstring = m_settings->value("ShowOptionViewOnStartup", "NoViewStartup").toString();
         int enumIdx = qvEnums::staticMetaObject.indexOfEnumerator("OptionViewOnStartup");
         m_showOptionViewOnStartup = (qvEnums::OptionViewOnStartup)qvEnums::staticMetaObject.enumerator(enumIdx)
                 .keysToValue(showOptionstring.toLatin1().data());
@@ -486,13 +487,13 @@ void QVApplication::loadSettings()
     m_showReadProgress = m_settings->value("ShowReadProgress", true).toBool();
     m_saveReadProgress = m_settings->value("SaveReadProgress", true).toBool();
     m_saveFolderViewWidth = m_settings->value("SaveFolderViewWidth", false).toBool();
-    m_folderViewWidth = m_settings->value("FolderViewWidth", 200).toInt();
+    m_folderViewWidth = m_settings->value("FolderViewWidth", 303).toInt();
     m_settings->endGroup();
 
     // Catalog
     m_settings->beginGroup("Catalog");
     {
-        QString viewModestring = m_settings->value("CatalogViewModeSetting", "Icon").toString();
+        QString viewModestring = m_settings->value("CatalogViewModeSetting", "List").toString();
         int enumIdx = qvEnums::staticMetaObject.indexOfEnumerator("CatalogViewMode");
         m_catalogViewModeSetting = (qvEnums::CatalogViewMode)qvEnums::staticMetaObject.enumerator(enumIdx).keysToValue(viewModestring.toLatin1().data());
     }
@@ -541,12 +542,12 @@ void QVApplication::loadSettings()
 
     // Others
     m_settings->beginGroup("Others");
-    m_uiLanguage = m_settings->value("UiLanguage", "").toString();
+    m_uiLanguage = m_settings->value("UiLanguage", "English").toString();
     m_confirmDeletePage = m_settings->value("ConfirmDeletePage", true).toBool();
     m_settings->endGroup();
 
     m_settings->beginGroup("Appearance");
-    m_uiTheme = m_settings->value("UiTheme", "Default").toString();
+    m_uiTheme = m_settings->value("UiTheme", "Dark").toString();
     //QString themeFilePath = getApplicationFilePath(":/themes/"+m_uiTheme+".qss"); //Local files
     QString themeFilePath(":/themes/"+m_uiTheme+".qss"); // Resource files
     QFile File(themeFilePath);
