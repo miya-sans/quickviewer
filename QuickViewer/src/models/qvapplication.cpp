@@ -149,8 +149,8 @@ void QVApplication::myInstallTranslator()
 void QVApplication::registDefaultKeyMap()
 {
     // Default key configs
-    // Esc only leaves fullscreen, the window is not closed by it
-    m_keyActions.addDefaultKey("actionExitFullscreen", QKeySequence("Esc"));
+    // Esc leaves fullscreen, or closes the window when it is not fullscreen
+    m_keyActions.addDefaultKey("actionExitApplicationOrFullscreen", QKeySequence("Esc"));
     m_keyActions.addDefaultKey("actionNextPage", QKeySequence("L, Right, Space, D"));
     m_keyActions.addDefaultKey("actionPrevPage", QKeySequence("H, Left, Backspace, A"));
     m_keyActions.addDefaultKey("actionFastForward", QKeySequence("Shift+L, Num+3"));
@@ -380,7 +380,7 @@ QString QVApplication::getDefaultPictureFolderPath()
 }
 
 // Revision of the settings file. Files without it were saved with the original defaults of QuickViewer
-#define QV_SETTINGS_REVISION 2
+#define QV_SETTINGS_REVISION 3
 
 void QVApplication::migrateSettings()
 {
@@ -417,9 +417,18 @@ void QVApplication::migrateSettings()
         migrateKey("actionFitToWindow", "F", "");
         migrateKey("actionFitting", "M, F12, Num+*", "F, M, F12, Num+*");
     }
-    if(revision < 2) {
-        // Esc does not close the window any more, it is used by 'Exit Fullscreen'
-        migrateKey("actionExitApplicationOrFullscreen", "Esc", "");
+    if(revision < 3) {
+        // Esc closes the window again (revision 2 had moved it to 'Exit Fullscreen')
+        QString exitKey = "KeyConfig/actionExitApplicationOrFullscreen";
+        QString exitFullscreenKey = "KeyConfig/actionExitFullscreen";
+        if(m_settings->contains(exitKey) && m_settings->value(exitKey).toString().isEmpty()
+           && m_settings->value(exitFullscreenKey, "Esc").toString() == "Esc") {
+            m_settings->setValue(exitKey, "Esc");
+            m_settings->setValue(exitFullscreenKey, "");
+        }
+        // fitting enlarges images smaller than the window, and the window is restored like web browsers
+        migrateValue("View/DontEnlargeSmallImagesOnFitting", {"true"}, "false");
+        migrateValue("WindowState/RestoreWindowState", {"false"}, "true");
     }
 
     m_settings->setValue("Others/SettingsRevision", QV_SETTINGS_REVISION);
@@ -534,7 +543,7 @@ void QVApplication::loadSettings()
     m_backgroundColor = QColor(m_settings->value("BackgroundColor", "0xff000000").toString().toUInt(nullptr, 16));
     m_backgroundColor2 = QColor(m_settings->value("BackgroundColor2", "0x5e5e5e").toString().toUInt(nullptr, 16));
     m_useCheckeredPattern  = m_settings->value("UseCheckeredPattern", false).toBool();
-    m_dontEnlargeSmallImagesOnFitting  = m_settings->value("DontEnlargeSmallImagesOnFitting", true).toBool();
+    m_dontEnlargeSmallImagesOnFitting  = m_settings->value("DontEnlargeSmallImagesOnFitting", false).toBool();
     m_showFullscreenSignage  = m_settings->value("ShowFullscreenSignage", false).toBool();
     m_dontShrinkForLargeImage  = m_settings->value("DontShrinkForLargeImage", false).toBool();
 //    m_showFullscreenTitleBar = m_settings->value("ShowFullscreenTitleBar", true).toBool();
@@ -572,7 +581,7 @@ void QVApplication::loadSettings()
 
     // WindowState
     m_settings->beginGroup("WindowState");
-    m_restoreWindowState  = m_settings->value("RestoreWindowState", false).toBool();
+    m_restoreWindowState  = m_settings->value("RestoreWindowState", true).toBool();
     m_windowGeometry  = m_settings->value("WindowGeometry", "").toByteArray();
     m_windowState  = m_settings->value("WindowState", "").toByteArray();
     m_beginAsFullscreen  = m_settings->value("BeginAsFullscreen", false).toBool();

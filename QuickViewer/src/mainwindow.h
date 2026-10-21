@@ -256,6 +256,10 @@ protected:
     ExifDialog* m_exifDialog;
     QToolButton* m_fullscreenButton;
     ToastNotification* m_toast;
+    /**
+     * @brief m_geometryBeforeFullscreen window geometry saved when closed in fullscreen
+     */
+    QByteArray m_geometryBeforeFullscreen;
     uint m_menubarFontSize;
 	uint m_pageSliderHeight;
 };

@@ -243,9 +243,18 @@ MainWindow::MainWindow(QWidget *parent)
         if(qApp->HideMouseCursorInFullscreen())
             ui->graphicsView->setCursor(Qt::BlankCursor);
         showFullScreen();
-    } else if(qApp->RestoreWindowState()) {
-        restoreGeometry(qApp->WindowGeometry());
-        restoreState(qApp->WindowState());
+    } else {
+        // Like web browsers, the size, position and maximized state of the last window are restored,
+        // but never fullscreen. A new window is large in the center of the screen
+        if(!qApp->RestoreWindowState() || !restoreGeometry(qApp->WindowGeometry())) {
+            QRect available = screen()->availableGeometry();
+            resize(available.width()*3/4, available.height()*4/5);
+            move(available.center() - rect().center());
+        }
+        if(windowState() & Qt::WindowFullScreen)
+            setWindowState(windowState() & ~Qt::WindowFullScreen);
+        if(qApp->RestoreWindowState())
+            restoreState(qApp->WindowState());
     }
     if(isFullScreen()) {
         menuBar()->hide();
@@ -389,7 +398,8 @@ void MainWindow::closeEvent(QCloseEvent *)
     m_onWindowClosing = true;
     delete m_contextMenu;
     m_contextMenu = nullptr;
-    qApp->setWindowGeometry(saveGeometry());
+    // saved without fullscreen, which is not restored
+    qApp->setWindowGeometry(isFullScreen() && !m_geometryBeforeFullscreen.isEmpty() ? m_geometryBeforeFullscreen : saveGeometry());
     qApp->setWindowState(saveState());
 }
 
@@ -965,6 +975,7 @@ void MainWindow::onActionFullscreen_triggered()
         ui->graphicsView->setWillFullscreen(true);
         ui->graphicsView->skipRisizeEvent(true);
         m_viewerWindowStateMaximized = isMaximized();
+        m_geometryBeforeFullscreen = saveGeometry();
         if(qApp->HideMouseCursorInFullscreen())
             ui->graphicsView->setCursor(Qt::BlankCursor);
 
