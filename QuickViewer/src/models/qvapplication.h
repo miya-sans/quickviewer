@@ -251,7 +251,11 @@ public:
      * @brief CopyDestinationFolder folder where the displayed image is copied with 'Copy to Folder'
      */
     QString CopyDestinationFolder() { return m_copyDestinationFolder; }
+    /**
+     * @brief setCopyDestinationFolder sets the folder and puts it at the top of RecentCopyDestinationFolders
+     */
     void setCopyDestinationFolder(QString copyDestinationFolder);
+    const QStringList& RecentCopyDestinationFolders() const { return m_recentCopyDestinationFolders; }
 
     // History
     int MaxHistoryCount() { return m_maxHistoryCount; }
@@ -489,6 +493,7 @@ private:
     QString m_uiTheme;
     QColor m_iconColor;
     QString m_copyDestinationFolder;
+    QStringList m_recentCopyDestinationFolders;
 
     QSettings* m_settings;
     BookProgressManager* m_bookshelfManager;

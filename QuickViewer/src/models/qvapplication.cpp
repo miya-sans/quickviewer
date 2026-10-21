@@ -415,11 +415,18 @@ void QVApplication::migrateSettings()
     m_settings->sync();
 }
 
+#define MAX_RECENT_COPY_DESTINATION_FOLDERS 10
+
 void QVApplication::setCopyDestinationFolder(QString copyDestinationFolder)
 {
     m_copyDestinationFolder = copyDestinationFolder;
+    m_recentCopyDestinationFolders.removeAll(copyDestinationFolder);
+    m_recentCopyDestinationFolders.push_front(copyDestinationFolder);
+    while(m_recentCopyDestinationFolders.size() > MAX_RECENT_COPY_DESTINATION_FOLDERS)
+        m_recentCopyDestinationFolders.pop_back();
     // saved immediately so that it is kept even if the application does not exit normally
     m_settings->setValue("File/CopyDestinationFolder", m_copyDestinationFolder);
+    m_settings->setValue("File/RecentCopyDestinationFolders", m_recentCopyDestinationFolders);
     m_settings->sync();
 }
 
@@ -570,6 +577,7 @@ void QVApplication::loadSettings()
     m_extractSolidArchiveToTemporaryDir = m_settings->value("ExtractSolidArchiveToTemporaryDir", true).toBool();
     m_lastOpenedFolderPath = m_settings->value("LastOpenedFolderPath", "").toString();
     m_copyDestinationFolder = m_settings->value("CopyDestinationFolder", "").toString();
+    m_recentCopyDestinationFolders = m_settings->value("RecentCopyDestinationFolders", QStringList()).value<QStringList>();
     m_settings->endGroup();
 
     // Folder
@@ -743,6 +751,7 @@ void QVApplication::saveSettings()
     m_settings->setValue("ExtractSolidArchiveToTemporaryDir", m_extractSolidArchiveToTemporaryDir);
     m_settings->setValue("LastOpenedFolderPath", m_lastOpenedFolderPath);
     m_settings->setValue("CopyDestinationFolder", m_copyDestinationFolder);
+    m_settings->setValue("RecentCopyDestinationFolders", m_recentCopyDestinationFolders);
     m_settings->endGroup();
 
     m_settings->beginGroup("Folder");

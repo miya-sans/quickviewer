@@ -1703,7 +1703,27 @@ QString MainWindow::selectCopyDestinationFolder()
     QString current = qApp->CopyDestinationFolder();
     if(current.isEmpty() || !QDir(current).exists())
         current = m_pageManager.isFolder() ? m_pageManager.realVolumePath() : qApp->HomeFolderPath();
-    CopyFolderDialog dialog(this, current);
+    // recent destinations, and folders QuickViewer has opened (the folder of an archive)
+    QStringList recents, opened, added;
+    auto addFolder = [&](QStringList& list, const QString& path) {
+        QString folder = QDir::cleanPath(QDir::fromNativeSeparators(path));
+#ifdef Q_OS_WIN
+        QString key = folder.toLower();
+#else
+        QString key = folder;
+#endif
+        if(folder.isEmpty() || added.contains(key) || !QFileInfo(folder).isDir())
+            return;
+        added << key;
+        list << folder;
+    };
+    foreach(const QString& path, qApp->RecentCopyDestinationFolders())
+        addFolder(recents, path);
+    foreach(const QString& path, qApp->History()) {
+        QFileInfo info(path);
+        addFolder(opened, info.isDir() ? info.absoluteFilePath() : info.absolutePath());
+    }
+    CopyFolderDialog dialog(this, current, recents, opened);
     if(dialog.exec() != QDialog::Accepted || dialog.folder().isEmpty())
         return QString();
     qApp->setCopyDestinationFolder(dialog.folder());

@@ -2,26 +2,40 @@
 
 #include "copyfolderdialog.h"
 
-CopyFolderDialog::CopyFolderDialog(QWidget *parent, const QString &folder)
+CopyFolderDialog::CopyFolderDialog(QWidget *parent, const QString &folder, const QStringList &recentFolders, const QStringList &otherFolders)
     : QDialog(parent)
-    , m_pathEdit(new QLineEdit(this))
+    , m_pathCombo(new QComboBox(this))
     , m_messageLabel(new QLabel(this))
     , m_buttons(new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this))
 {
     setWindowTitle(tr("Copy to Folder", "Title of the dialog to select the destination folder of 'Copy to Folder'"));
-    setMinimumWidth(520);
+    setMinimumWidth(560);
 
     QLabel* label = new QLabel(tr("Folder to copy images to:", "Label of the destination folder of 'Copy to Folder'"), this);
-    m_pathEdit->setText(QDir::toNativeSeparators(folder));
-    m_pathEdit->setPlaceholderText(tr("Paste a folder path, or select it with Browse...", "Placeholder of the destination folder of 'Copy to Folder'"));
-    m_pathEdit->setClearButtonEnabled(true);
-    m_pathEdit->selectAll();
+
+    m_pathCombo->setEditable(true);
+    // the entered path must not be added to the list, and must not be completed with a longer folder name
+    m_pathCombo->setInsertPolicy(QComboBox::NoInsert);
+    m_pathCombo->setCompleter(nullptr);
+    m_pathCombo->setMaxVisibleItems(20);
+    m_pathCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_pathCombo->setMinimumContentsLength(40);
+    foreach(const QString& path, recentFolders)
+        m_pathCombo->addItem(QDir::toNativeSeparators(path));
+    if(!recentFolders.isEmpty() && !otherFolders.isEmpty())
+        m_pathCombo->insertSeparator(m_pathCombo->count());
+    foreach(const QString& path, otherFolders)
+        m_pathCombo->addItem(QDir::toNativeSeparators(path));
+    m_pathCombo->setEditText(QDir::toNativeSeparators(folder));
+    m_pathCombo->lineEdit()->setPlaceholderText(tr("Paste a folder path, choose one from the list, or select it with Browse...", "Placeholder of the destination folder of 'Copy to Folder'"));
+    m_pathCombo->lineEdit()->setClearButtonEnabled(true);
+    m_pathCombo->lineEdit()->selectAll();
 
     QPushButton* browseButton = new QPushButton(tr("Browse...", "Button to open the folder picker of 'Copy to Folder'"), this);
     browseButton->setAutoDefault(false);
 
     QHBoxLayout* pathLayout = new QHBoxLayout;
-    pathLayout->addWidget(m_pathEdit, 1);
+    pathLayout->addWidget(m_pathCombo, 1);
     pathLayout->addWidget(browseButton);
 
     QVBoxLayout* layout = new QVBoxLayout(this);
@@ -31,15 +45,15 @@ CopyFolderDialog::CopyFolderDialog(QWidget *parent, const QString &folder)
     layout->addWidget(m_buttons);
 
     connect(browseButton, SIGNAL(clicked()), this, SLOT(onBrowseButton_clicked()));
-    connect(m_pathEdit, SIGNAL(textChanged(QString)), this, SLOT(onPathEdit_textChanged()));
+    connect(m_pathCombo, SIGNAL(editTextChanged(QString)), this, SLOT(onPath_textChanged()));
     connect(m_buttons, SIGNAL(accepted()), this, SLOT(accept()));
     connect(m_buttons, SIGNAL(rejected()), this, SLOT(reject()));
-    onPathEdit_textChanged();
+    onPath_textChanged();
 }
 
 QString CopyFolderDialog::folder() const
 {
-    QString path = m_pathEdit->text().trimmed();
+    QString path = m_pathCombo->currentText().trimmed();
     // 'Copy as path' of Explorer encloses the path with quotes
     if(path.length() >= 2 && path.startsWith('"') && path.endsWith('"'))
         path = path.mid(1, path.length()-2).trimmed();
@@ -55,10 +69,10 @@ void CopyFolderDialog::onBrowseButton_clicked()
         tr("Select the folder to copy images to", "Title of the dialog to select the destination folder of 'Copy to Folder'"),
         QDir(start).exists() ? start : QString());
     if(!selected.isEmpty())
-        m_pathEdit->setText(QDir::toNativeSeparators(selected));
+        m_pathCombo->setEditText(QDir::toNativeSeparators(selected));
 }
 
-void CopyFolderDialog::onPathEdit_textChanged()
+void CopyFolderDialog::onPath_textChanged()
 {
     QString path = folder();
     bool valid = !path.isEmpty() && QFileInfo(path).isDir();
