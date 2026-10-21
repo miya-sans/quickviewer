@@ -14,6 +14,7 @@ class FolderWindow;
 class CatalogWindow;
 class ThumbnailManager;
 class BrightnessWindow;
+class ToastNotification;
 
 class MainWindow : public QMainWindow
 {
@@ -22,7 +23,7 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
-    virtual bool moveToTrush(QString ) {return false;}
+    virtual bool moveToTrush(QString path) {return QFile::moveToTrash(path);}
     virtual bool setStayOnTop(bool ) {return false;}
     virtual void setWindowTop(bool ) {}
     virtual void setMailAttachment(QString ) {}
@@ -176,8 +177,11 @@ public slots:
     void onActionContextMenu_triggered();
     void onActionOpenfolder_triggered();
     void onActionRecyclePage_triggered();
+    void onActionCopyToFolder_triggered();
+    void onActionSetCopyFolder_triggered();
     void onActionDeletePage_triggered();
     void onActionExitApplicationOrFullscreen_triggered();
+    void onActionExitFullscreen_triggered();
     void onActionMailAttachment_triggered();
     void onActionRenameImageFile_triggered();
     void onActionConfirmDeletePage_triggered(bool enable);
@@ -217,6 +221,29 @@ private slots:
 
 
 protected:
+    /**
+     * @brief selectCopyDestinationFolder lets the user select the folder for 'Copy to Folder' and remembers it
+     * @return the selected folder, or empty if canceled
+     */
+    QString selectCopyDestinationFolder();
+    /**
+     * @brief resetIcons sets monochrome icons colored for the current theme to the actions
+     */
+    void resetIcons();
+    /**
+     * @brief resetStatusLabel shows the information of the image (m_pageCaption) on the right of the menu bar,
+     * shortened to the free space
+     */
+    void resetStatusLabel();
+    /**
+     * @brief showStatusText shows a message in place of the information of the image
+     */
+    void showStatusText(const QString& text);
+    /**
+     * @brief fitOnOpen turns on fitting, when a file is opened or the application starts
+     */
+    void fitOnOpen();
+
     Ui::MainWindow *ui;
     bool m_viewerWindowStateMaximized;
     bool m_sliderChanging;
@@ -241,6 +268,15 @@ protected:
     BrightnessWindow* m_brightnessWindow;
     ExifDialog* m_exifDialog;
     QToolButton* m_fullscreenButton;
+    ToastNotification* m_toast;
+    /**
+     * @brief m_geometryBeforeFullscreen window geometry saved when closed in fullscreen
+     */
+    QByteArray m_geometryBeforeFullscreen;
+    /**
+     * @brief m_pageBarAction the page slider at the end of the toolbar (there is no bar at the bottom)
+     */
+    QAction* m_pageBarAction;
     uint m_menubarFontSize;
 	uint m_pageSliderHeight;
 };

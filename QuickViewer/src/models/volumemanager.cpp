@@ -81,17 +81,6 @@ void VolumeManager::on_enmumerated()
 
 // #endif
 
-static bool fileNameDescendingLessThan(const QString& m1, const QString& m2)
-{
-    QCollator col;col.setNumericMode(true);
-    return col.compare(m1, m2) < 0;
-}
-
-static bool fileNameDescendingGreaterThan(const QString& m1, const QString& m2)
-{
-    QCollator col;col.setNumericMode(true);
-    return col.compare(m1, m2) > 0;
-}
 
 static bool fileSizeLessThan(const QvImageMetadata& m1, const QvImageMetadata& m2)
 {
@@ -132,12 +121,19 @@ void VolumeManager::sortForReady(qvEnums::ImageSortBy sortBy)
     foreach(const QString& fl, m_filelist) {
         m_imageMetadataList << QvImageMetadata(this, fl);
     }
+    // Creating a QCollator is expensive, so share one for all comparisons
+    QCollator col;
+    col.setNumericMode(true);
     switch(sortBy) {
     case qvEnums::SortByFileName:
-        std::sort(m_filelist.begin(), m_filelist.end(), fileNameDescendingLessThan);
+        std::sort(m_filelist.begin(), m_filelist.end(), [&col](const QString& m1, const QString& m2) {
+            return col.compare(m1, m2) < 0;
+        });
         break;
     case qvEnums::SortByFileNameDescending:
-        std::sort(m_filelist.begin(), m_filelist.end(), fileNameDescendingGreaterThan);
+        std::sort(m_filelist.begin(), m_filelist.end(), [&col](const QString& m1, const QString& m2) {
+            return col.compare(m1, m2) > 0;
+        });
         break;
     case qvEnums::SortByFileSize:
         std::stable_sort(m_imageMetadataList.begin(), m_imageMetadataList.end(), fileSizeLessThan);
@@ -249,6 +245,7 @@ void VolumeManager::on_ready()
     default:
         break;
     }
+    limitPrefetchByMemory(offsets);
     foreach (const int of, offsets) {
         int cnt = m_cnt+of;
         if(cnt < 0 || cnt >= m_filelist.size())
@@ -281,8 +278,53 @@ void VolumeManager::on_ready()
     m_currentCache = m_imageCache.object(m_cnt);
 }
 
+// Memory for the images read ahead and cached. e.g. 7 images of 7224x4064 (112MB each) on 64bit
+#ifdef Q_PROCESSOR_X86_64
+#define PREFETCH_MEMORY_BUDGET (800LL*1024*1024)
+#else
+#define PREFETCH_MEMORY_BUDGET (300LL*1024*1024)
+#endif
+// the current page, the next ones for the dual view and the previous one are always read
+#define MIN_PREFETCH_IMAGES 4
+
+void VolumeManager::limitPrefetchByMemory(QList<int>& offsets)
+{
+    int count;
+    if(m_imageCache.contains(m_cnt) && m_imageCache.object(m_cnt).isFinished()) {
+        // estimate the size of the images in the volume from the current one
+        const ImageContent ic = m_imageCache.object(m_cnt).result();
+        qint64 bytes = ic.Image.sizeInBytes() + ic.ResizedImage.sizeInBytes();
+        count = bytes > 0 ? (int)qMax<qint64>(MIN_PREFETCH_IMAGES, PREFETCH_MEMORY_BUDGET / bytes) : offsets.size();
+        m_imageCache.setMaxSize(qBound(MIN_PREFETCH_IMAGES, count, qApp->MaxImagesCache()));
+    } else {
+        // the size is unknown until the current image is loaded, the rest is read ahead at the next page
+        count = MIN_PREFETCH_IMAGES;
+    }
+    if(count >= offsets.size())
+        return;
+    // keep the nearest pages (the next one before the previous one), in the original order
+    QList<int> nearest = offsets;
+    std::stable_sort(nearest.begin(), nearest.end(), [](int a, int b) {
+        return qAbs(a) != qAbs(b) ? qAbs(a) < qAbs(b) : a > b;
+    });
+    nearest = nearest.mid(0, count);
+    QMutableListIterator<int> it(offsets);
+    while(it.hasNext()) {
+        if(!nearest.contains(it.next()))
+            it.remove();
+    }
+}
+
 const ImageContent VolumeManager::getIndexedImageContent(int idx)
 {
+    if(idx < 0 || idx >= m_filelist.size())
+        return ImageContent();
+    // The page may not have been prefetched (e.g. moving backward in dual view)
+    if(!m_imageCache.contains(idx)) {
+        ImageContent ic = futureLoadImageFromFileVolume(this, getIndexedFileName(idx), QSize());
+        m_imageCache.insert(idx, QtConcurrent::run(pathThrough, ic));
+        return ic;
+    }
 //    future_image cache = m_imageCache[idx];
     future_image& cache = m_imageCache.object(idx);
 //    if(!cache.isFinished())
@@ -299,7 +341,7 @@ void VolumeManager::moveToThread(QThread *targetThread)
 bool VolumeManager::nextPage()
 {
 //    qDebug() << "nextPage: " << m_cnt << m_filelist.size() <<  "prevCache.size()" << m_prevCache.size() << "nextCache.size()" << m_nextCache.size();
-    if(m_cnt >= m_filelist.size() || m_loader->contents().size()==0)
+    if(m_cnt >= m_filelist.size()-1 || m_loader->contents().size()==0)
         return false;
     m_cnt++;
     on_ready();
@@ -388,6 +430,40 @@ static QZimg::FilterMode ShaderEffect2FilterMode(qvEnums::ShaderEffect effect)
     default:return QZimg::ResizeBicubic;
     }
 }
+/**
+ * @brief resizeHalf shrinks the image to half its size with ResizeHalf
+ * @return null image if failed
+ */
+static QImage resizeHalf(QImage src)
+{
+    if(src.width() < 32 || src.height() < 2)
+        return QImage();
+    switch(src.depth()) {
+    case 32:
+        // ResizeHalf requires a width of multiples of 4 and an even height
+        src = src.copy(QRect(0, 0, src.width() >> 2 << 2, src.height() >> 1 << 1));
+        break;
+    default:
+        if(src.format() != QImage::Format::Format_Grayscale8 && src.format() != QImage::Format::Format_RGB888) {
+            src = src.convertToFormat(QImage::Format::Format_RGB888);
+        }
+        // ResizeHalf requires a width of multiples of 16 and an even height
+        src = src.copy(QRect(0, 0, src.width() >> 4 << 4, src.height() >> 1 << 1));
+        break;
+    }
+    if(src.isNull())
+        return QImage();
+
+    QSize srcSize = src.size();
+    QImage half = QImage(srcSize.width()/2, srcSize.height()/2, src.format());
+    if(half.isNull())
+        return QImage();
+    ResizeHalf::FMT fmt = (ResizeHalf::FMT)(src.depth() >> 3);
+    ResizeHalf resizer(fmt);
+    resizer.resizeHV(half.bits(), src.bits(), src.width(), srcSize.height(), half.bytesPerLine(), src.bytesPerLine());
+    return half;
+}
+
 static ImageContent loadWithSpecifiedFormat(QString path, QSize pageSize, QByteArray bytes, QString aformat, uint loopcount)
 {
     for(;;) {
@@ -478,22 +554,35 @@ static ImageContent loadWithSpecifiedFormat(QString path, QSize pageSize, QByteA
             while(loadingSize.width() > maxTextureSize || loadingSize.height() > maxTextureSize)
                 loadingSize = QSize((loadingSize.width()+1) >> 1,(loadingSize.height()+1) >> 1);
             reader.setScaledSize(loadingSize);
+        } else if(!qApp->DontShrinkForLargeImage() && baseSize.isValid()
+                  && (baseSize.width() > maxTextureSize || baseSize.height() > maxTextureSize)
+                  && reader.supportsOption(QImageIOHandler::ScaledSize)) {
+            // Decoding a reduced image is much faster and lighter than shrinking it after loading (e.g. JPEG)
+            loadingSize = baseSize.scaled(maxTextureSize, maxTextureSize, Qt::KeepAspectRatio);
+            reader.setScaledSize(loadingSize);
         }
         QImage src;
         ImageContent ic(path, bytes.length());
         {
-            QImage tmp;
-            // QImage processing sometimes fails
-            for(int count = 1; ; count++) {
-                tmp = reader.read();
-                if(!tmp.isNull()) break;
-                qDebug() << "[0]" << path << tmp << count;
-                if(count >= 100 || aformat.startsWith("tif")) return ic;
-//                if(count >= 100) return ImageContent(path);
-                QThread::currentThread()->usleep(40000);
+            QImage tmp = reader.read();
+            if(tmp.isNull() && !aformat.startsWith("tif")) {
+                // QImage processing sometimes fails.
+                // A reader can't read the same data twice, so retry once with a new one
+                qDebug() << "[0]" << path << reader.errorString();
+                QBuffer retryBuffer(&bytes);
+                QImageReader retry(&retryBuffer, aformat.toUtf8());
+                retry.setQuality(reader.quality());
+                if(reader.scaledSize().isValid())
+                    retry.setScaledSize(reader.scaledSize());
+                tmp = retry.read();
             }
+            if(tmp.isNull())
+                return ic;
             if(baseSize.isEmpty())
                 baseSize = loadingSize = tmp.size();
+            // 16 bits per channel images are shown with 8 bits per channel
+            if(tmp.depth() > 32)
+                tmp = tmp.convertToFormat(tmp.hasAlphaChannel() ? QImage::Format_ARGB32 : QImage::Format_RGB32);
             src = QZimg::toPackedImage(tmp);
             if(src.isNull()) return ImageContent(path, bytes.length());
         }
@@ -516,61 +605,15 @@ static ImageContent loadWithSpecifiedFormat(QString path, QSize pageSize, QByteA
         if(qApp->DontShrinkForLargeImage() || (src.width() <= maxTextureSize && src.height() <= maxTextureSize)) {
             ic = ImageContent(src, path, baseSize, info, bytes.length());
         } else {
-            // resample for too big images
-            QSize srcSizeReal = src.size();
-            QImage src2;
-            switch(src.depth()) {
-            case 32:
-                if((src.width() | 0x3) > 0) {
-                    // QImage processing sometimes fails
-                    for(int count = 1; ; count++) {
-                        src2 = src.copy(QRect(0, 0, src.width() >> 2 << 2, src.height() >> 1 << 1));
-                        if(!src2.isNull()) break;
-                        qDebug() << "[2]" << path << src2 << count;
-                        if(count >= 100) return ImageContent(path, bytes.length());
-                        QThread::currentThread()->usleep(40000);
-                    }
-                    src.swap(src2);
-                }
-                break;
-            default:
-                if(src.format() != QImage::Format::Format_Grayscale8 && src.format() != QImage::Format::Format_RGB888) {
-                    src = src.convertToFormat(QImage::Format::Format_RGB888);
-                }
-                if((src.width() | 0xF) > 0) {
-                    // QImage processing sometimes fails
-                    int count = 0;
-                    do {
-                        src2 = src.copy(QRect(0, 0, src.width() >> 4 << 4, src.height() >> 1 << 1));
-                        qDebug() << "[2]" << path << src2 << count;
-                        if(!src2.isNull())
-                            break;
-                        if(src2.isNull() && count++ < 1000) {
-                            QThread::currentThread()->usleep(1000);
-                            continue;
-                        }
-                        return ImageContent(path, bytes.length());
-                    } while(1);
-                    src.swap(src2);
-                }
-                break;
+            // resample for too big images, halving until the image fits in the texture size
+            while(src.width() > maxTextureSize || src.height() > maxTextureSize) {
+                QImage half = resizeHalf(src);
+                if(half.isNull())
+                    return ImageContent(path, bytes.length());
+                src = half;
             }
-
-            QSize srcSize = src.size();
-            QSize halfSize = QSize((srcSize.width())/2, (srcSize.height())/2);
-
-            //qDebug() << path << "[3]width:" << srcSize;
-            QImage half = QImage(halfSize.width(), halfSize.height(), src.format());
-            //qDebug() << path << "[2]Dest:" <<  half;
-
-    //        qDebug() << path << src;
-            ResizeHalf::FMT fmt = (ResizeHalf::FMT)(src.depth() >> 3);
-            ResizeHalf resizer(fmt);
-            resizer.resizeHV(half.bits(), src.bits(), src.width(), srcSize.height(), half.bytesPerLine(), src.bytesPerLine());
-
-    //        ImageContent ic(QPixmap::fromImage(half), path, srcSizeReal, info);
-            ic.Image = half;
-            ic.ImportSize = half.size();
+            ic.Image = src;
+            ic.ImportSize = src.size();
         }
         // CPU resizing before Page Viewing
         if(!pageSize.isEmpty() && !ic.Image.isNull()) {

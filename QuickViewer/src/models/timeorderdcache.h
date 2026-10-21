@@ -17,7 +17,7 @@ public:
     }
     void insertNoChecked(const Key &key, T object) {
         m_cache.insert(key, object);
-        while(size() > m_maxSize) {
+        while(size() > m_maxSize && !m_newerOrders.isEmpty()) {
             Key last = m_newerOrders.takeLast();
     //            qDebug("remove cached: %d", last);
             trash(m_cache.take(last));
@@ -44,6 +44,14 @@ public:
         }
     }
 
+    /**
+     * @brief setMaxSize changes the number of cached objects, the oldest ones are removed if needed
+     */
+    void setMaxSize(int maxsize) {
+        m_maxSize = maxsize;
+        while(size() > m_maxSize && !m_newerOrders.isEmpty())
+            trash(m_cache.take(m_newerOrders.takeLast()));
+    }
     int size() const { return m_cache.size(); }
     int count() const { return m_cache.size(); }
     bool empty() const { return m_cache.empty(); }

@@ -2,7 +2,6 @@
 #include "volumemanager.h"
 
 QvImageMetadata::QvImageMetadata(VolumeManager *volume, QString filename)
-    :QObject (volume)
 {
     m_volume = volume;
     m_filename = filename;

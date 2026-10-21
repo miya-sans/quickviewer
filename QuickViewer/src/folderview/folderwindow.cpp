@@ -16,6 +16,17 @@ FolderWindow::FolderWindow(QWidget *parent, Ui::MainWindow *)
     , m_itemDelegate(parent, this)
 {
     ui->setupUi(this);
+    // monochrome icons colored for the current theme
+    ui->homeButton->setIcon(qApp->flatIcon("home"));
+    ui->prevButton->setIcon(qApp->flatIcon("previous"));
+    ui->nextButton->setIcon(qApp->flatIcon("next"));
+    ui->toParentButton->setIcon(qApp->flatIcon("up"));
+    ui->reloadButton->setIcon(qApp->flatIcon("rotate-cw"));
+    ui->actionHome->setIcon(ui->homeButton->icon());
+    ui->actionPrev->setIcon(ui->prevButton->icon());
+    ui->actionNext->setIcon(ui->nextButton->icon());
+    ui->actionToParent->setIcon(ui->toParentButton->icon());
+    ui->actionReload->setIcon(ui->reloadButton->icon());
 
 #ifdef Q_OS_MACOS
     ui->menuBar->setNativeMenuBar(false);

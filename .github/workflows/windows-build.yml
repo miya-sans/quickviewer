@@ -1,0 +1,63 @@
+name: Windows build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          modules: qtimageformats
+          cache: true
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install jom
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://download.qt.io/official_releases/jom/jom.zip -OutFile jom.zip
+          Expand-Archive jom.zip -DestinationPath "$env:RUNNER_TEMP\jom"
+          echo "$env:RUNNER_TEMP\jom" >> $env:GITHUB_PATH
+
+      - name: Build
+        shell: cmd
+        run: |
+          mkdir build
+          cd build
+          qmake -recursive ..\QVproject.pro CONFIG+=release
+          if errorlevel 1 exit /b 1
+          jom
+          if errorlevel 1 exit /b 1
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $dist = "dist\QuickViewer"
+          New-Item -ItemType Directory -Force $dist, "$dist\translations", "$dist\database" | Out-Null
+          Copy-Item build\bin\QuickViewer.exe, build\bin\AssociateFilesWithQuickViewer.exe, build\lib\QSVGNative0.dll $dist
+          Copy-Item Qt7z\Qt7z\windll\x64\7z.dll $dist
+          Copy-Item README.md, LICENSE $dist
+          Copy-Item QuickViewer\translations\*.qm, QuickViewer\translations\languages.ini "$dist\translations"
+          Copy-Item QuickViewer\database\schema.sql, QuickViewer\database\thumbnail.sqlite3.db "$dist\database"
+          windeployqt --release --compiler-runtime "$dist\QuickViewer.exe"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickViewer-windows-x64
+          path: dist

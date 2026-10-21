@@ -66,6 +66,9 @@ contains(DEFINES, QV_WITH_LUMINOR) {
 win32 {
     win32-msvc* {
         QMAKE_CXXFLAGS += /wd4819
+        # NMake batch rules would build release/main.obj from
+        # ../AssociateFilesWithQuickViewer/main.cpp instead of src/main.cpp
+        CONFIG += no_batch
         # more heap area for x86
         equals(TARGET_ARCH, x86) {
             QMAKE_LFLAGS += /LARGEADDRESSAWARE
@@ -123,6 +126,8 @@ SOURCES += \
     src/renamedialog.cpp \
     src/widgets/flowlayout.cpp \
     src/widgets/pageslider.cpp \
+    src/widgets/toastnotification.cpp \
+    src/widgets/copyfolderdialog.cpp \
     src/qlanguageselector/qlanguageselector.cpp \
     src/qnamedpipe/qnamedpipe.cpp \
     src/qfullscreenframe/qinnerframe.cpp \
@@ -167,6 +172,8 @@ HEADERS  += \
     src/stdafx.h \
     src/widgets/flowlayout.h \
     src/widgets/pageslider.h \
+    src/widgets/toastnotification.h \
+    src/widgets/copyfolderdialog.h \
     src/qlanguageselector/qlanguageselector.h \
     src/qnamedpipe/qnamedpipe.h \
     src/qfullscreenframe/qinnerframe.h \

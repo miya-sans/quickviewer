@@ -73,4 +73,39 @@
     <qresource prefix="/databases">
         <file alias="thumbnail_database">database/thumbnail.sqlite3.db</file>
     </qresource>
+    <qresource prefix="/">
+        <file>icons/flat/bars.svg</file>
+        <file>icons/flat/copy.svg</file>
+        <file>icons/flat/dir.svg</file>
+        <file>icons/flat/dualview.svg</file>
+        <file>icons/flat/export.svg</file>
+        <file>icons/flat/find.svg</file>
+        <file>icons/flat/first.svg</file>
+        <file>icons/flat/home.svg</file>
+        <file>icons/flat/fit-width.svg</file>
+        <file>icons/flat/fullscreen.svg</file>
+        <file>icons/flat/info.svg</file>
+        <file>icons/flat/last.svg</file>
+        <file>icons/flat/next-fast.svg</file>
+        <file>icons/flat/next.svg</file>
+        <file>icons/flat/open.svg</file>
+        <file>icons/flat/pin.svg</file>
+        <file>icons/flat/play.svg</file>
+        <file>icons/flat/previous-fast.svg</file>
+        <file>icons/flat/previous.svg</file>
+        <file>icons/flat/rects.svg</file>
+        <file>icons/flat/rotate-cw.svg</file>
+        <file>icons/flat/settings.svg</file>
+        <file>icons/flat/sliders.svg</file>
+        <file>icons/flat/star-off.svg</file>
+        <file>icons/flat/star-on.svg</file>
+        <file>icons/flat/subfolders.svg</file>
+        <file>icons/flat/trash.svg</file>
+        <file>icons/flat/up.svg</file>
+        <file>icons/flat/volume-next.svg</file>
+        <file>icons/flat/volume-previous.svg</file>
+        <file>icons/flat/zoom-in.svg</file>
+        <file>icons/flat/zoom-out.svg</file>
+        <file>icons/flat/zoom-reset.svg</file>
+    </qresource>
 </RCC>

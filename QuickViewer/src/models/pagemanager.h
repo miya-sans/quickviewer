@@ -17,13 +17,6 @@ public:
     virtual QString currentPagePath()=0;
 };
 
-#define ReloadedEventType (QEvent::Type)(QEvent::Type::User + 50)
-
-class ReloadedEvent : public QEvent {
-public:
-    ReloadedEvent() : QEvent(ReloadedEventType) {}
-};
-
 
 class PageManager : public QObject, public PageManagerProtocol
 {
@@ -36,7 +29,18 @@ public:
     bool loadVolumeWithFile(QString path, bool prohibitProhibit2Page=false);
     void nextVolume();
     void prevVolume();
-    void reloadVolumeAfterRemoveImage();
+    /**
+     * @brief reloadVolume re-enumerates the current folder volume.
+     * The displayed image is kept if it still exists, otherwise the nearest remaining image is selected.
+     */
+    void reloadVolume();
+    /**
+     * @brief copyCurrentPagesTo copies the displayed images into the folder (images in archives are extracted).
+     * Existing files are not overwritten, the copies are renamed like "page01 (2).jpg"
+     * @param copiedFiles paths of the copied files
+     * @return error message, or empty if succeeded
+     */
+    QString copyCurrentPagesTo(const QString& folder, QStringList& copiedFiles);
 
     // Pages
     bool nextPage();
@@ -62,17 +66,11 @@ public:
     int currentPage() override { return m_currentPage; }
     QVector<ImageContent>& currentPageContent() { return m_pages; }
     QString currentPagePath() override {
-        if(!m_fileVolume)
+        if(!m_fileVolume || m_pages.isEmpty())
             return "";
         return QDir::toNativeSeparators(m_fileVolume->getPathByFileName(m_pages[0].Path));
     }
-    QString nextPagePathAfterDeleted() {
-        if(!m_fileVolume || m_fileVolume->isArchive() || m_fileVolume->size() <= 1)
-            return "";
-        int idx = m_fileVolume->size()-1==m_currentPage ? m_currentPage-1 : m_currentPage+1;
-        return QDir::toNativeSeparators(m_fileVolume->getPathByIndex(idx));
-    }
-    QString currentPageName() { return m_pages[0].Path; }
+    QString currentPageName() { return m_pages.isEmpty() ? "" : m_pages[0].Path; }
 
     /**
      * @brief currentPageNumAsString: for the label text on PageBar
@@ -109,6 +107,9 @@ public:
         m_pages.resize(0);
         m_fileVolume = nullptr;
         m_volumes.clear();
+        m_watchedVolume.clear();
+        m_watchTimer.stop();
+        setWatchedDirectories(QStringList());
     }
     QStringList enumVolumes(QDir dir);
 
@@ -137,12 +138,20 @@ public slots:
     void on_pageEnumerated();
     void onSlideShowStarted();
     void onSlideShowStopped();
+    /**
+     * @brief updateWatcher watches the folder of the current volume to follow added/removed images
+     */
+    void updateWatcher();
 
+private slots:
+    void onWatcher_directoryChanged(const QString& path);
+    void onWatchTimer_timeout();
 
 private:
     VolumeManager* addVolumeCache(QString path, bool onlyCover, bool immediate);
     VolumeManager* createVolume(QString path, bool onlyCover);
-    VolumeManager* passThrough(VolumeManager* vol) { return vol; }
+    void setWatchedDirectories(const QStringList& dirs);
+    void onVolumeBuiltWithFile(VolumeManager* newer, QString pathbase, QString qpath, int generation);
     /**
      * @brief younger page number
      */
@@ -158,6 +167,12 @@ private:
     ImageView * m_imaveView;
 
     bool m_waitForReloaded;
+    int m_loadGeneration;
+
+    // live update of the folder being viewed
+    QFileSystemWatcher m_watcher;
+    QTimer m_watchTimer;
+    QString m_watchedVolume;
 
 //    VolumeManagerBuilder m_builderForAssoc;
 };

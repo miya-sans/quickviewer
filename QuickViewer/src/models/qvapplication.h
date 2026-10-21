@@ -247,6 +247,15 @@ public:
     void setExtractSolidArchiveToTemporaryDir(bool extractSolidArchiveToTemporaryDir) { m_extractSolidArchiveToTemporaryDir = extractSolidArchiveToTemporaryDir; }
     QString LastOpenedFolderPath() { return m_lastOpenedFolderPath; }
     void setLastOpenedFolderPath(QString lastOpenedFolderPath) { m_lastOpenedFolderPath = lastOpenedFolderPath; }
+    /**
+     * @brief CopyDestinationFolder folder where the displayed image is copied with 'Copy to Folder'
+     */
+    QString CopyDestinationFolder() { return m_copyDestinationFolder; }
+    /**
+     * @brief setCopyDestinationFolder sets the folder and puts it at the top of RecentCopyDestinationFolders
+     */
+    void setCopyDestinationFolder(QString copyDestinationFolder);
+    const QStringList& RecentCopyDestinationFolders() const { return m_recentCopyDestinationFolders; }
 
     // History
     int MaxHistoryCount() { return m_maxHistoryCount; }
@@ -327,15 +336,16 @@ public:
 
     // Appearance
     QString UiTheme() { return m_uiTheme; }
-    void setUiTheme (QString uiTheme) {
-        m_uiTheme = uiTheme;
-        //QString themeFilePath = getApplicationFilePath(":/themes/"+m_uiTheme+".qss"); //Local files
-        QString themeFilePath(":/themes/"+m_uiTheme+".qss"); // Resource files
-        QFile File(themeFilePath);
-        File.open(QFile::ReadOnly);
-        QString styleSheet = QString(File.readAll());
-        QApplication::setStyleSheet(styleSheet);
-    }
+    void setUiTheme (QString uiTheme);
+    /**
+     * @brief IconColor color of the toolbar icons for the current theme
+     */
+    QColor IconColor() { return m_iconColor; }
+    /**
+     * @brief flatIcon a monochrome icon of "icons/flat" colored for the current theme
+     * @param name file name without ".svg", e.g. "next"
+     */
+    QIcon flatIcon(const QString& name);
 
     void registDefaultKeyMap();
     void registDefaultMouseMap();
@@ -350,6 +360,12 @@ public:
      */
     void saveSettings();
     QThread* mainThread() { return m_mainThread; }
+
+private:
+    /**
+     * @brief migrateSettings updates settings saved with former defaults to the current defaults (only once)
+     */
+    void migrateSettings();
 
 private:
     QThread* m_mainThread;
@@ -475,6 +491,13 @@ private:
 
     // Appearance
     QString m_uiTheme;
+    QColor m_iconColor;
+    /**
+     * @brief m_nativeStyleName the style of the OS, used by the "Default" theme
+     */
+    QString m_nativeStyleName;
+    QString m_copyDestinationFolder;
+    QStringList m_recentCopyDestinationFolders;
 
     QSettings* m_settings;
     BookProgressManager* m_bookshelfManager;

@@ -120,6 +120,11 @@ public:
      * @brief on_ready Called when the application is ready. First, or the image to be displayed next and its file path are emitted
      */
     void on_ready();
+    /**
+     * @brief limitPrefetchByMemory reduces the images read ahead (and kept) when the images are large
+     * @param offsets the pages to be read ahead relative to the current page, the far ones are removed
+     */
+    void limitPrefetchByMemory(QList<int>& offsets);
     int pageCount() { return m_cnt; }
 
 //    QPixmap getIndexedImage(int idx);
