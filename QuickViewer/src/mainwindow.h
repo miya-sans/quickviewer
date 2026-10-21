@@ -230,6 +230,19 @@ protected:
      * @brief resetIcons sets monochrome icons colored for the current theme to the actions
      */
     void resetIcons();
+    /**
+     * @brief resetStatusLabel shows the information of the image (m_pageCaption) on the right of the menu bar,
+     * shortened to the free space
+     */
+    void resetStatusLabel();
+    /**
+     * @brief showStatusText shows a message in place of the information of the image
+     */
+    void showStatusText(const QString& text);
+    /**
+     * @brief fitOnOpen turns on fitting, when a file is opened or the application starts
+     */
+    void fitOnOpen();
 
     Ui::MainWindow *ui;
     bool m_viewerWindowStateMaximized;
@@ -260,6 +273,10 @@ protected:
      * @brief m_geometryBeforeFullscreen window geometry saved when closed in fullscreen
      */
     QByteArray m_geometryBeforeFullscreen;
+    /**
+     * @brief m_pageBarAction the page slider at the end of the toolbar (there is no bar at the bottom)
+     */
+    QAction* m_pageBarAction;
     uint m_menubarFontSize;
 	uint m_pageSliderHeight;
 };

@@ -138,6 +138,18 @@ QStatusBar::item {
     border: none;
 }
 
+/* thin page slider at the end of the toolbar */
+QFrame#pageFrame QSlider:horizontal {
+    min-height: 12px;
+    max-height: 12px;
+}
+
+/* information of the image on the right of the menu bar */
+QLabel#statusLabel {
+    color: #aaaaaa;
+    background: transparent;
+}
+
 QSlider::groove:horizontal {
     height: 4px;
     background-color: rgba(255, 255, 255, 40);
@@ -148,9 +160,9 @@ QSlider::sub-page:horizontal {
 }
 
 QSlider::handle:horizontal {
-    width: 12px;
-    margin: -5px 0px;
-    border-radius: 6px;
+    width: 10px;
+    margin: -3px 0px;
+    border-radius: 5px;
     background-color: #dddddd;
 }
 

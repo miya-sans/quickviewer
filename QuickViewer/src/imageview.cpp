@@ -28,22 +28,7 @@ ImageView::ImageView(QWidget *parent)
     , m_readyStack(0)
     , m_lastScreenPixelRatio(1.0)
 {
-    //viewSizeList << 16 << 20 << 25 << 33 << 50 << 75 << 100 << 150 << 200 << 300 << 400 << 800;
-    viewSizeList
-            << ZoomFraction(1,6)    //  16.6%
-            << ZoomFraction(1,5)    //  20.0%
-            << ZoomFraction(1,4)    //  25.0%
-            << ZoomFraction(1,3)    //  33.3%
-            << ZoomFraction(1,2)    //  50.0%
-            << ZoomFraction(3,4)    //  75.0%
-            << ZoomFraction(1,1)    // 100  %
-            << ZoomFraction(3,2)    // 150  %
-            << ZoomFraction(2,1)    // 200  %
-            << ZoomFraction(3,1)    // 300  %
-            << ZoomFraction(4,1)    // 400  %
-            << ZoomFraction(6,1)    // 600  %
-            << ZoomFraction(8,1);   // 800  %
-    viewSizeIdx = 6; // 100
+    m_zoomScale = 1.0;
 
     QGraphicsScene* scene = new QGraphicsScene(this);
     setScene(scene);
@@ -215,7 +200,7 @@ void ImageView::readyForPaint() {
                             m_pageRotations.isEmpty() ? 0 : m_pageRotations[pageCount+i]);
             } else {
                 drawRect = m_pages[i].setPageLayoutManual(
-                            pageRect, pageAlign, getZoomScale() * scalefactor,
+                            pageRect, pageAlign, getZoomScale() / m_pages[i].sourceRatio() * scalefactor,
                             m_pageRotations.isEmpty() ? 0 : m_pageRotations[pageCount+i],
                             m_loupeEnable);
             }
@@ -290,8 +275,10 @@ void ImageView::setSceneRectMode(bool scrolled, const QRect &sceneRect)
 
     // Correct the scroll bar so that it keep at the center of the viewport
     // when the image display magnification is changed.
+    bool scaleChanged = false;
     if (m_readyStack == 1) {
         qreal newScale = m_pages[0].DrawScale;
+        scaleChanged = m_beforeScale != newScale;
         if(!qApp->Fitting()) {
             if (!m_loupeEnable && m_beforeScale > 0 && m_beforeScale != newScale) {
                 int vw = 0.5*viewport()->width();
@@ -308,7 +295,8 @@ void ImageView::setSceneRectMode(bool scrolled, const QRect &sceneRect)
 
     if(m_scrollMode != newMode)
         emit scrollModeChanged(m_scrollMode = newMode);
-    if(oldrect != newrect)
+    // the zoom in the status text changes even when the image stays inside the view
+    if(oldrect != newrect || scaleChanged)
         emit zoomingChanged();
 
     m_readyStack--;
@@ -749,43 +737,38 @@ void ImageView::on_rightSideBook_triggered(bool rightSideBook)
     readyForPaint();
 }
 
-void ImageView::on_scaleUp_triggered()
+// Each zoom step multiplies the displayed scale, starting from the fitted scale when fitting is on.
+// The scale stops at 100% (of the original image) when a step goes over it or ends near it
+#define ZOOM_STEP 1.25
+#define MIN_ZOOM 0.02
+#define MAX_ZOOM 16.0
+
+void ImageView::zoomBy(qreal factor)
 {
     if(!m_pages.size())
         return;
+    // the displayed scale is relative to the original image, the loaded image may be shrunk
+    qreal current = qApp->Fitting() ? m_pages[0].DrawScale * m_pages[0].sourceRatio() : m_zoomScale;
     if(qApp->Fitting()) {
         qApp->setFitting(false);
         emit fittingChanged(qApp->ImageFitMode());
-        qreal scale = m_pages[0].DrawScale;
-        viewSizeIdx = 0;
-        qDebug() << viewSizeIdx << (viewSizeList.size()-1) << scale << getZoomScale();
-        while(viewSizeIdx < viewSizeList.size()-1 && getZoomScale() < scale)
-            viewSizeIdx++;
-        readyForPaint();
-        return;
     }
-    if(viewSizeIdx < viewSizeList.size() -1)
-        viewSizeIdx++;
+    qreal next = current * factor;
+    if(qAbs(current - 1.0) > 0.01 && ((current < 1.0) != (next < 1.0) || qAbs(next - 1.0) < 0.1))
+        next = 1.0;
+    next = qBound(MIN_ZOOM, next, MAX_ZOOM);
+    m_zoomScale = next;
     readyForPaint();
+}
+
+void ImageView::on_scaleUp_triggered()
+{
+    zoomBy(ZOOM_STEP);
 }
 
 void ImageView::on_scaleDown_triggered()
 {
-    if(!m_pages.size())
-        return;
-    if(qApp->Fitting()) {
-        qApp->setFitting(false);
-        emit fittingChanged(qApp->ImageFitMode());
-        qreal scale = m_pages[0].DrawScale;
-        viewSizeIdx = viewSizeList.size()-1;
-        while(viewSizeIdx > 0 && getZoomScale() > scale)
-            viewSizeIdx--;
-        readyForPaint();
-        return;
-    }
-    if(viewSizeIdx > 0)
-        viewSizeIdx--;
-    readyForPaint();
+    zoomBy(1.0 / ZOOM_STEP);
 }
 
 void ImageView::on_wideImageAsOneView_triggered(bool wideImage)
@@ -900,7 +883,6 @@ qreal ImageView::getZoomScale()
     // In this case, the content drawn is automatically scaled by devicePixelRatio,
     // but avoid scaling only the image.
     // QScreen* screen0 = screen();
-    // return 1.0*viewSizeList[viewSizeIdx].first/viewSizeList[viewSizeIdx].second/screen0->devicePixelRatio();
-    return 1.0*viewSizeList[viewSizeIdx].first/viewSizeList[viewSizeIdx].second;
+    return m_zoomScale;
 }
 

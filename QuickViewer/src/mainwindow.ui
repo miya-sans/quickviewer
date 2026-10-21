@@ -108,23 +108,23 @@
         <item>
          <widget class="QFrame" name="pageFrame">
           <property name="frameShape">
-           <enum>QFrame::StyledPanel</enum>
+           <enum>QFrame::NoFrame</enum>
           </property>
           <property name="frameShadow">
-           <enum>QFrame::Raised</enum>
+           <enum>QFrame::Plain</enum>
           </property>
           <layout class="QHBoxLayout" name="horizontalLayout">
            <property name="leftMargin">
-            <number>2</number>
+            <number>6</number>
            </property>
            <property name="topMargin">
-            <number>2</number>
+            <number>0</number>
            </property>
            <property name="rightMargin">
-            <number>2</number>
+            <number>6</number>
            </property>
            <property name="bottomMargin">
-            <number>2</number>
+            <number>0</number>
            </property>
            <item>
             <widget class="QLabel" name="pageLabel">

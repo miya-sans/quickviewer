@@ -44,7 +44,6 @@ class ImageView : public QGraphicsView, public PageContentProtocol
     Q_OBJECT
 public:
     enum RendererType { Native, OpenGL, Image };
-    typedef QPair<uint, uint> ZoomFraction;
     explicit ImageView(QWidget *parent = Q_NULLPTR);
     void setRenderer(RendererType type = Native);
     void setPageManager(PageManager* manager);
@@ -142,8 +141,11 @@ public slots:
     void onBrightness_valueChanged(ImageRetouch params);
 
 private:
-//    qreal getZoomScale() {return 1.0*viewSizeList[viewSizeIdx].first/viewSizeList[viewSizeIdx].second;}
     qreal getZoomScale();
+    /**
+     * @brief zoomBy multiplies the displayed scale (the fitted scale when fitting is on), and turns off fitting
+     */
+    void zoomBy(qreal factor);
 
     RendererType m_renderer;
     QVector<PageContent> m_pages;
@@ -151,12 +153,11 @@ private:
     SavedPoint m_ptLeftTop;
     QGraphicsScene* m_scene;
     Qt::AnchorPoint m_hoverState;
-    /**
-     * @brief for manual ZoomIn or ZoomOut
-     */
-    QList<ZoomFraction> viewSizeList;
     QVector<int> m_pageRotations;
-    int viewSizeIdx;
+    /**
+     * @brief m_zoomScale scale of the original image for manual ZoomIn or ZoomOut, kept when the page changes
+     */
+    qreal m_zoomScale;
     QFont m_font;
     QCursor m_loupeCursor;
 
