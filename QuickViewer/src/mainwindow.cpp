@@ -20,6 +20,7 @@
 #include "qinnerframe.h"
 #include "brightnesswindow.h"
 #include "toastnotification.h"
+#include "promptoverlay.h"
 #include "copyfolderdialog.h"
 
 #ifdef Q_OS_WIN
@@ -40,6 +41,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_exifDialog(nullptr)
     , m_fullscreenButton(nullptr)
     , m_toast(nullptr)
+    , m_promptOverlay(nullptr)
 {
     ui->setupUi(this);
     m_menubarFontSize = ui->menuBar->font().pointSize();
@@ -117,6 +119,15 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 'Copy to Folder' shows where the image was copied with this notification
     m_toast = new ToastNotification(ui->graphicsView);
+
+    // The prompt of images made with Stable Diffusion is shown at the bottom right (P)
+    m_promptOverlay = new PromptOverlay(ui->graphicsView);
+    connect(m_promptOverlay, &PromptOverlay::notify, this, [this](const QString& message) {
+        m_toast->showMessage(message, QString(), QString(), false);
+    });
+    connect(m_promptOverlay, &PromptOverlay::hideRequested, ui->actionShowPrompt, &QAction::trigger);
+    ui->actionShowPrompt->setChecked(qApp->ShowPromptOverlay());
+    connect(ui->actionShowPrompt, &QAction::triggered, this, &MainWindow::onActionShowPrompt_triggered);
     connect(ui->actionCopyToFolder, SIGNAL(triggered()), this, SLOT(onActionCopyToFolder_triggered()));
     connect(ui->actionSetCopyFolder, SIGNAL(triggered()), this, SLOT(onActionSetCopyFolder_triggered()));
     connect(ui->actionExitFullscreen, SIGNAL(triggered()), this, SLOT(onActionExitFullscreen_triggered()));
@@ -1037,8 +1048,10 @@ void MainWindow::onPageManager_pageChanged()
 {
     //qDebug() << "on_pageChanged_triggered";
     int maxVolume = m_pageManager.size();
-    if (maxVolume <= 0)
+    if (maxVolume <= 0) {
+        m_promptOverlay->setPrompt(PromptInfo());
         return;
+    }
     // PageSlider
     ui->pageLabel->setText(m_pageManager.currentPageNumAsString());
     m_sliderChanging = true;
@@ -1069,6 +1082,16 @@ void MainWindow::onPageManager_pageChanged()
     if(m_exifDialog && m_pageManager.currentPageCount() > 0) {
         m_exifDialog->setExif(m_pageManager.currentPageContent()[0]);
     }
+
+    // the prompt of the first image that has one (in dual view)
+    PromptInfo prompt;
+    for(const ImageContent& ic : m_pageManager.currentPageContent()) {
+        if(ic.Prompt.isValid()) {
+            prompt = ic.Prompt;
+            break;
+        }
+    }
+    m_promptOverlay->setPrompt(prompt);
 }
 
 void MainWindow::onPageManager_volumeChanged(QString path)
@@ -1178,6 +1201,12 @@ void MainWindow::onMenuHistory_triggered(QAction *action)
     loadVolume(action->text().mid(4));
 }
 
+
+void MainWindow::onActionShowPrompt_triggered(bool show)
+{
+    qApp->setShowPromptOverlay(show);
+    m_promptOverlay->setOverlayEnabled(show);
+}
 
 void MainWindow::resizeEvent(QResizeEvent *e)
 {

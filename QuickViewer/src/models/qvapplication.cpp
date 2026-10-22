@@ -180,6 +180,7 @@ void QVApplication::registDefaultKeyMap()
     m_keyActions.addDefaultKey("actionCopyToFolder", QKeySequence("E"));
     m_keyActions.addDefaultKey("actionSetCopyFolder", QKeySequence("Shift+E"));
     m_keyActions.addDefaultKey("actionMaximizeOrNormal", QKeySequence("Return, Num+Enter"));
+    m_keyActions.addDefaultKey("actionShowPrompt", QKeySequence("P"));
 }
 
 void QVApplication::registDefaultMouseMap()
@@ -265,6 +266,7 @@ void QVApplication::registActions(Ui::MainWindow *ui)
     m_keyActions.registAction("actionLargeToolbarIcons", ui->actionLargeToolbarIcons, groupName);
     m_keyActions.registAction("actionShowToolBar", ui->actionShowToolBar, groupName);
     m_keyActions.registAction("actionShowStatusBar", ui->actionShowStatusBar, groupName);
+    m_keyActions.registAction("actionShowPrompt", ui->actionShowPrompt, groupName);
     m_keyActions.registAction("actionShowPageBar", ui->actionShowPageBar, groupName);
     m_keyActions.registAction("actionShowMenuBar", ui->actionShowMenuBar, groupName);
     m_keyActions.registAction("actionShowFullscreenSignage", ui->actionShowFullscreenSignage, groupName);
@@ -484,6 +486,28 @@ void QVApplication::setCopyDestinationFolder(QString copyDestinationFolder)
     m_settings->sync();
 }
 
+void QVApplication::setShowPromptOverlay(bool show)
+{
+    m_showPromptOverlay = show;
+    m_settings->setValue("PromptOverlay/Visible", show);
+}
+
+void QVApplication::setPromptOverlayAllSettings(bool show)
+{
+    m_promptOverlayAllSettings = show;
+    m_settings->setValue("PromptOverlay/AllSettings", show);
+}
+
+void QVApplication::setPromptOverlayGeometry(QSize size, int corner, QPoint offset)
+{
+    m_promptOverlaySize = size;
+    m_promptOverlayCorner = corner;
+    m_promptOverlayOffset = offset;
+    m_settings->setValue("PromptOverlay/Size", size);
+    m_settings->setValue("PromptOverlay/Corner", corner);
+    m_settings->setValue("PromptOverlay/Offset", offset);
+}
+
 void QVApplication::setUiTheme(QString uiTheme)
 {
     QFile file(":/themes/"+uiTheme+".qss"); // Resource files
@@ -507,7 +531,7 @@ void QVApplication::setUiTheme(QString uiTheme)
     m_iconColor = match.hasMatch() ? QColor(match.captured(1)) : QApplication::palette().color(QPalette::ButtonText);
 }
 
-QIcon QVApplication::flatIcon(const QString &name)
+QIcon QVApplication::flatIcon(const QString &name, const QColor &color)
 {
     QSvgRenderer renderer(QString(":/icons/flat/%1.svg").arg(name));
     QIcon icon;
@@ -521,7 +545,7 @@ QIcon QVApplication::flatIcon(const QString &name)
         painter.setRenderHint(QPainter::Antialiasing);
         renderer.render(&painter, QRectF(0, 0, size, size));
         painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-        painter.fillRect(pixmap.rect(), m_iconColor);
+        painter.fillRect(pixmap.rect(), color.isValid() ? color : m_iconColor);
         painter.end();
         icon.addPixmap(pixmap);
     }
@@ -636,6 +660,15 @@ void QVApplication::loadSettings()
     m_lastOpenedFolderPath = m_settings->value("LastOpenedFolderPath", "").toString();
     m_copyDestinationFolder = m_settings->value("CopyDestinationFolder", "").toString();
     m_recentCopyDestinationFolders = m_settings->value("RecentCopyDestinationFolders", QStringList()).value<QStringList>();
+    m_settings->endGroup();
+
+    // PromptOverlay: shown at the bottom right, in the size of the text
+    m_settings->beginGroup("PromptOverlay");
+    m_showPromptOverlay = m_settings->value("Visible", true).toBool();
+    m_promptOverlayAllSettings = m_settings->value("AllSettings", false).toBool();
+    m_promptOverlaySize = m_settings->value("Size", QSize()).toSize();
+    m_promptOverlayCorner = m_settings->value("Corner", int(Qt::BottomRightCorner)).toInt();
+    m_promptOverlayOffset = m_settings->value("Offset", QPoint(12, 12)).toPoint();
     m_settings->endGroup();
 
     // Folder

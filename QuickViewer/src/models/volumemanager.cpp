@@ -647,7 +647,10 @@ static ImageContent futureLoadImageFromFileVolumeImpl(VolumeManager* volume, QSt
 //        bool lodepng_exist = IFileLoader::isImageFile("lodepng");
 //        aformat = lodepng_exist ? "lodepng" : "png";
 //    }
-    return loadWithSpecifiedFormat(path, pageSize, bytes, aformat, 5);
+    ImageContent ic = loadWithSpecifiedFormat(path, pageSize, bytes, aformat, 5);
+    // the data hidden in the alpha channel (NovelAI) can be read only from the image in its original size
+    ic.Prompt = PromptReader::read(bytes, ic.ImportSize == ic.BaseSize ? ic.Image : QImage());
+    return ic;
 }
 
 ImageContent VolumeManager::futureLoadImageFromFileVolume(VolumeManager* volume, QString path, QSize pageSize)
