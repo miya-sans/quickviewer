@@ -106,6 +106,7 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
   - Widgets added to a *visible* widget stay hidden until Qt shows them later, so call `show()` before measuring (see `rebuildParameters`).
   - Nested layouts update their size hints with a posted LayoutRequest. `PromptOverlay::relayout()` invalidates them before reading `sizeHint()`.
   - The Flat theme's `QTextEdit { padding: 2px }` also applies inside the overlay unless its own stylesheet sets the padding.
+  - Text heights come from the document layout (`PromptTextEdit::contentHeight`), not `QFontMetrics::lineSpacing()`: fallback fonts (Japanese, Wine's fonts) make lines taller and the last line was cut.
 - **`Windows.h` in every source.** `src/stdafx.h` is the precompiled header and includes `Windows.h` without `NOMINMAX`, so write `(std::numeric_limits<T>::min)()`.
 - **`ImageView::zoomingChanged`** refreshes the information text. It fires when the scene rect *or* the drawn scale changes.
 

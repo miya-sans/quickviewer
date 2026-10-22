@@ -69,16 +69,29 @@ public:
         viewport()->setCursor(Qt::IBeamCursor);
     }
     /**
-     * @brief contentHeight height of the whole text in the width
+     * @brief contentHeight height of the first lines of the text in the width (all of them when lines is 0).
+     * The lines are measured in the layout, because fallback fonts (e.g. Japanese) make them taller than the font
      */
-    int contentHeight(int width) const
+    int contentHeight(int width, int lines = 0) const
     {
         QScopedPointer<QTextDocument> doc(document()->clone());
         doc->setDefaultFont(font());
         doc->setDefaultTextOption(document()->defaultTextOption());
         doc->setDocumentMargin(0);
         doc->setTextWidth(width);
-        return qCeil(doc->size().height());
+        // lays out the whole document
+        const int height = qCeil(doc->size().height());
+        int count = 0;
+        for(QTextBlock block = doc->begin(); lines > 0 && block.isValid(); block = block.next()) {
+            const QTextLayout* layout = block.layout();
+            for(int i = 0; i < layout->lineCount(); i++) {
+                if(++count == lines) {
+                    const QTextLine line = layout->lineAt(i);
+                    return qMin(height, qCeil(layout->position().y() + line.y() + line.height()));
+                }
+            }
+        }
+        return height;
     }
 
 protected:
@@ -628,8 +641,8 @@ void PromptOverlay::relayout()
 
     struct Text {
         PromptTextEdit* edit;
-        int maxLines;
         int line;
+        int fitted;
         int preferred;
         int height;
     };
@@ -638,8 +651,8 @@ void PromptOverlay::relayout()
         if(box->isHidden() || edit->isHidden())
             return;
         PromptTextEdit* text = static_cast<PromptTextEdit*>(edit);
-        const int line = text->fontMetrics().lineSpacing();
-        texts << Text{text, maxLines, line, qMax(line, text->contentHeight(textWidth)), 0};
+        const int line = text->contentHeight(textWidth, 1);
+        texts << Text{text, line, text->contentHeight(textWidth, maxLines), qMax(line, text->contentHeight(textWidth)), 0};
     };
     addText(m_positiveBox, m_positiveText, PROMPT_LINES);
     addText(m_negativeBox, m_negativeText, NEGATIVE_LINES);
@@ -685,7 +698,7 @@ void PromptOverlay::relayout()
         distribute(height - chrome);
     } else {
         for(Text& text : texts) {
-            text.height = qMin(text.preferred, text.maxLines * text.line);
+            text.height = qMin(text.preferred, text.fitted);
             height += text.height;
         }
         if(height > bounds.height()) {
