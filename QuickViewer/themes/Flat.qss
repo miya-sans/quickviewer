@@ -4,13 +4,13 @@
  *
  * icon-color: #dddddd
  *
- * background #333333, foreground #dddddd, highlight #0066bb
+ * background #333333, foreground #dddddd, highlight #5c5c5c (neutral grey, no color accent)
  */
 
 * {
     color: #dddddd;
     selection-color: #ffffff;
-    selection-background-color: #0066bb;
+    selection-background-color: #5c5c5c;
 }
 
 QWidget {
@@ -138,31 +138,19 @@ QStatusBar::item {
     border: none;
 }
 
-/* thin page slider at the end of the toolbar */
-QFrame#pageFrame QSlider:horizontal {
-    min-height: 12px;
-    max-height: 12px;
-}
-
-/* information of the image on the right of the menu bar */
-QLabel#statusLabel {
-    color: #aaaaaa;
-    background: transparent;
-}
-
 QSlider::groove:horizontal {
     height: 4px;
     background-color: rgba(255, 255, 255, 40);
 }
 
 QSlider::sub-page:horizontal {
-    background-color: #0066bb;
+    background-color: #9a9a9a;
 }
 
 QSlider::handle:horizontal {
-    width: 10px;
-    margin: -3px 0px;
-    border-radius: 5px;
+    width: 12px;
+    margin: -5px 0px;
+    border-radius: 6px;
     background-color: #dddddd;
 }
 
@@ -176,7 +164,7 @@ QSlider::groove:vertical {
 }
 
 QSlider::add-page:vertical {
-    background-color: #0066bb;
+    background-color: #9a9a9a;
 }
 
 QSlider::handle:vertical {
@@ -358,7 +346,7 @@ QAbstractItemView::item:hover {
 
 QAbstractItemView::item:selected {
     color: #ffffff;
-    background-color: #0066bb;
+    background-color: #5c5c5c;
 }
 
 QTreeView::branch:has-children:closed {
@@ -401,7 +389,7 @@ QTabBar::tab:hover {
 
 QTabBar::tab:selected {
     background-color: rgba(255, 255, 255, 30);
-    border-bottom: 2px solid #0066bb;
+    border-bottom: 2px solid #aaaaaa;
 }
 
 /* scrollbars */
@@ -450,7 +438,7 @@ QDockWidget::title {
 }
 
 #TagFrame QPushButton:checked {
-    background-color: #0066bb;
+    background-color: #5c5c5c;
 }
 
 #shortcutGroupBox QGroupBox {

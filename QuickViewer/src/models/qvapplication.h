@@ -140,6 +140,9 @@ public:
     void setImageSortBy(qvEnums::ImageSortBy sortBy) { m_imageSortBy = sortBy; }
     bool Fitting() { return m_fitting; }
     void setFitting (bool fitting) { m_fitting = fitting; }
+    // the manual zoom (1.0 is 100% of the original image), remembered like Fitting
+    qreal ZoomScale() { return m_zoomScale; }
+    void setZoomScale (qreal zoomScale) { m_zoomScale = zoomScale; }
     qvEnums::FitMode ImageFitMode() { return m_fitMode; }
     void setImageFitMode(qvEnums::FitMode fitMode) { m_fitMode = fitMode; }
     QColor BackgroundColor() { return m_backgroundColor; }
@@ -377,6 +380,7 @@ private:
     // View
     qvEnums::ImageSortBy m_imageSortBy;
     bool m_fitting;
+    qreal m_zoomScale;
 //    bool m_fitToWidth;
     qvEnums::FitMode m_fitMode;
     bool m_dualView;

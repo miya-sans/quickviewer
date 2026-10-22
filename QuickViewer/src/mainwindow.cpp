@@ -38,8 +38,8 @@ MainWindow::MainWindow(QWidget *parent)
     , m_catalogWindow(nullptr)
     , m_brightnessWindow(nullptr)
     , m_exifDialog(nullptr)
+    , m_fullscreenButton(nullptr)
     , m_toast(nullptr)
-    , m_pageBarAction(nullptr)
 {
     ui->setupUi(this);
     m_menubarFontSize = ui->menuBar->font().pointSize();
@@ -73,8 +73,6 @@ MainWindow::MainWindow(QWidget *parent)
     m_contextMenu = ui->menuContextMenu;
 
     // setup checkable menus
-    // a new window always starts with fitting
-    qApp->setFitting(true);
     ui->actionFitting->setChecked(qApp->Fitting());
     ui->graphicsView->on_fitting_triggered(qApp->Fitting());
     switch(qApp->ImageSortBy()) {
@@ -92,6 +90,10 @@ MainWindow::MainWindow(QWidget *parent)
             << ui->actionSortByFileSizeDescending
             << ui->actionSortByModifiedTime
             << ui->actionSortByModifiedTimeDescending;
+    // Fit to window and Fit to width are exclusive, so triggering the checked one (F) fits again instead of unchecking it
+    QActionGroup* fitModeGroup = new QActionGroup(this);
+    fitModeGroup->addAction(ui->actionFitToWindow);
+    fitModeGroup->addAction(ui->actionFitToWidth);
     switch(qApp->ImageFitMode()) {
     case qvEnums::FitToRect: ui->actionFitToWindow->setChecked(true); break;
     case qvEnums::FitToWidth: ui->actionFitToWidth->setChecked(true); break;
@@ -110,29 +112,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_fullscreenButton->setIcon(QIcon(":/icons/fullscreen"));
     connect(m_fullscreenButton, SIGNAL(clicked(bool)), this, SLOT(onActionFullscreen_triggered()));
     connect(ui->actionFullscreen, SIGNAL(toggled(bool)), m_fullscreenButton, SLOT(setChecked(bool)));
-    // The information of the image (file name, page, resolution, zoom, file size) is shown
-    // on the right of the menu bar, so that no bar is needed at the bottom
-    QWidget* menuBarCorner = new QWidget(this);
-    QHBoxLayout* cornerLayout = new QHBoxLayout(menuBarCorner);
-    cornerLayout->setContentsMargins(0, 0, 0, 0);
-    cornerLayout->setSpacing(8);
-    ui->statusLabel->setMinimumWidth(0);
-    ui->statusLabel->setScaledContents(false);
-    ui->statusLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    cornerLayout->addWidget(ui->statusLabel);
-    cornerLayout->addWidget(m_fullscreenButton);
-    ui->menuBar->setCornerWidget(menuBarCorner);
-    // reparenting into the menu bar hides it
-    menuBarCorner->show();
+    ui->menuBar->setCornerWidget(m_fullscreenButton);
     resetIcons();
-
-    // The page slider is at the end of the toolbar, so only the menu bar and the toolbar are used
-    ui->pageFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    ui->pageSlider->setMinimumWidth(120);
-    // the cursor keys turn pages, they must not move the slider
-    ui->pageSlider->setFocusPolicy(Qt::NoFocus);
-    ui->mainToolBar->addSeparator();
-    m_pageBarAction = ui->mainToolBar->addWidget(ui->pageFrame);
 
     // 'Copy to Folder' shows where the image was copied with this notification
     m_toast = new ToastNotification(ui->graphicsView);
@@ -180,8 +161,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->actionShowMenuBar->setChecked(qApp->ShowMenuBar());
     if(!qApp->ShowMenuBar())
         menuBar()->hide();
-    // shown when a volume is loaded
-    m_pageBarAction->setVisible(false);
+    ui->pageFrame->hide();
 
     // History
     makeHistoryMenu();
@@ -211,10 +191,8 @@ MainWindow::MainWindow(QWidget *parent)
     case qvEnums::IconNoText: ui->actionCatalogViewIconNoText->setChecked(true); break;
     }
 
-    // the status bar is not used, the page number is also shown in the information on the menu bar
-    ui->statusBar->hide();
-    ui->pageLabel->hide();
-    showStatusText(tr("Any folder or archive is not loaded.", "The text of the status bar to be displayed when there is no image to be displayed immediately after the application is activated"));
+    ui->statusBar->addPermanentWidget(ui->statusLabel);
+    ui->statusLabel->setText(tr("Any folder or archive is not loaded.", "The text of the status bar to be displayed when there is no image to be displayed immediately after the application is activated"));
 
     // Shader
     ui->actionShaderBilinearBeforeCpuBicubic->setVisible(false);
@@ -286,6 +264,7 @@ MainWindow::MainWindow(QWidget *parent)
     if(isFullScreen()) {
         menuBar()->hide();
         ui->mainToolBar->hide();
+        ui->pageFrame->hide();
         statusBar()->hide();
         ui->actionFullscreen->setChecked(true);
         ui->graphicsView->setWillFullscreen(true);
@@ -368,7 +347,8 @@ void MainWindow::wheelEvent(QWheelEvent *e)
     if(e->buttons() & Qt::RightButton)
         needContextMenu = false;
     if(action == ui->actionZoomIn || action == ui->actionZoomOut) {
-        action->trigger();
+        // the wheel zooms finely, like over the image
+        ui->graphicsView->zoomByWheel(delta_y, action == ui->actionZoomIn);
         e->accept();
         return;
     }
@@ -519,6 +499,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             ui->mainToolBar->hide();
             return true;
         }
+        if(obj == ui->pageFrame && isFullScreen()) {
+            ui->pageFrame->hide();
+            return true;
+        }
         break;
     default:
         break;
@@ -526,18 +510,8 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
     return QObject::eventFilter(obj, event);
 }
 
-void MainWindow::fitOnOpen()
-{
-    if(qApp->Fitting())
-        return;
-    ui->actionFitting->setChecked(true);
-    ui->graphicsView->on_fitting_triggered(true);
-}
-
 void MainWindow::loadVolume(QString path, bool prohibitProhibit2Page)
 {
-    // an opened file is always fitted, even if fitting was turned off for the previous one
-    fitOnOpen();
     QStringList seps = path.split("::");
     if(!IFileLoader::isArchiveFile(seps[0]) && IFileLoader::isImageFile(path)) {
         m_pageManager.loadVolumeWithFile(path, prohibitProhibit2Page);
@@ -553,7 +527,7 @@ void MainWindow::loadVolume(QString path, bool prohibitProhibit2Page)
         return;
 
     createFolderWindow(true, path);
-    showStatusText(tr("Image file not found. Can't be opened", "Text to display in the status bar when failed to open the specified Volume"));
+    ui->statusLabel->setText(tr("Image file not found. Can't be opened", "Text to display in the status bar when failed to open the specified Volume"));
 }
 
 
@@ -624,8 +598,8 @@ void MainWindow::onGraphicsView_anchorHovered(Qt::AnchorPoint anchor)
     bool fullscreen = isFullScreen();
     bool showMenubar = fullscreen ? !qApp->HideMenuBarInFullscreen() : (!qApp->ShowMenuBar()   && !qApp->HideMenuBarParmanently());
     bool showToolbar = fullscreen ? !qApp->HideToolBarInFullscreen() : (!qApp->ShowToolBar()   && !qApp->HideToolBarParmanently());
-    // the page slider is in the toolbar
-    if(!showToolbar && !showMenubar)
+    bool showPageBar = fullscreen ? !qApp->HidePageBarInFullscreen() : (!qApp->ShowSliderBar() && !qApp->HidePageBarParmanently());
+    if(!showToolbar && !showMenubar && !showPageBar)
         return;
     if(anchor == Qt::AnchorTop && (showMenubar || showToolbar)) {
         QInnerFrame *innerFrame = new QInnerFrame(ui->graphicsView);
@@ -657,6 +631,25 @@ void MainWindow::onGraphicsView_anchorHovered(Qt::AnchorPoint anchor)
                 if(!fullscreen2 && qApp->ShowMenuBar())
                     ui->menuBar->setVisible(true);
             }
+            qApp->setInnerFrameShowing(false);
+        });
+        connect(this, SIGNAL(changingFullscreen(bool)), innerFrame, SLOT(close()));
+        connect(innerFrame, &QInnerFrame::closed, this, [=]{
+            delete innerFrame;
+        });
+        innerFrame->showWithoutTitleBar();
+    }
+    if(anchor == Qt::AnchorBottom && !qApp->HidePageBarParmanently() && (showPageBar || fullscreen)) {
+        QInnerFrame *innerFrame = new QInnerFrame(ui->graphicsView, Qt::AnchorBottom, qApp->LargeToolbarIcons() ? 60 : 30);
+        connect(innerFrame, &QInnerFrame::init, this, [&]{
+            innerFrame->layout()->addWidget(ui->pageFrame);
+            ui->pageFrame->show();
+            qApp->setInnerFrameShowing(true);
+            ui->pageFrame->setCursor(Qt::ArrowCursor);
+        });
+        connect(innerFrame, &QInnerFrame::deinit, this, [&]{
+            ui->pageFrame->hide();
+            ui->verticalViewPage->layout()->addWidget(ui->pageFrame);
             qApp->setInnerFrameShowing(false);
         });
         connect(this, SIGNAL(changingFullscreen(bool)), innerFrame, SLOT(close()));
@@ -968,6 +961,10 @@ void MainWindow::onActionFullscreen_triggered()
             menuBar()->show();
         if(qApp->ShowToolBar())
             ui->mainToolBar->show();
+        if(qApp->ShowSliderBar())
+            ui->pageFrame->show();
+        if(qApp->ShowStatusBar())
+            statusBar()->show();
         ui->actionFullscreen->setChecked(false);
         ui->graphicsView->skipRisizeEvent(false);
         ui->graphicsView->setCursor(Qt::ArrowCursor);
@@ -990,6 +987,7 @@ void MainWindow::onActionFullscreen_triggered()
 
         menuBar()->hide();
         ui->mainToolBar->hide();
+        ui->pageFrame->hide();
         statusBar()->hide();
         ui->actionFullscreen->setChecked(true);
         showFullScreen();
@@ -1012,8 +1010,9 @@ void MainWindow::onActionStayOnTop_triggered(bool top)
     }
 
     // If show() is called here when the application starts,
-    // there will be problems, so skip it.
+    // there will be problems, so skip it. The window is not shown yet, only the flag is set
     if (!m_fullscreenButton) {
+        setWindowFlags(flags);
         return;
     }
 
@@ -1058,7 +1057,10 @@ void MainWindow::onPageManager_pageChanged()
 //    m_pageCaption = m_pageManager.currentPageStatusAsString();
     m_pageCaption = m_imageString.getStatusBarText();
 
-    resetStatusLabel();
+    // Elide text(Otherwise the width of the main window will be forcibly changed)
+    QFontMetrics fontMetrics(ui->statusLabel->font());
+    QString statusLabelTxt = fontMetrics.elidedText(m_pageCaption, Qt::ElideMiddle, width()-100);
+    ui->statusLabel->setText(statusLabelTxt);
     resetVolumeCaption();
 
     if(!qApp->ShowStatusBar())
@@ -1077,7 +1079,8 @@ void MainWindow::onPageManager_volumeChanged(QString path)
     }
     if(!qApp->DontSavingHistory())
         qApp->addHistory(path);
-    m_pageBarAction->setVisible(qApp->ShowSliderBar());
+    if(!isFullScreen() && qApp->ShowSliderBar())
+        ui->pageFrame->show();
 
     resetVolumeCaption();
     makeHistoryMenu();
@@ -1098,8 +1101,8 @@ void MainWindow::onPageSlider_valueChanged(int value)
 void MainWindow::on_pageNolongerNeeded_triggered()
 {
     setWindowTitle(QString("%1 v%2").arg(qApp->applicationName()).arg(qApp->applicationVersion()));
-    m_pageBarAction->setVisible(false);
-    showStatusText(tr("Image file was not found. Can't be opened.", "Text to display in the status bar when failed to open the specified Volume"));
+    ui->pageFrame->hide();
+    ui->statusLabel->setText(tr("Image file was not found. Can't be opened.", "Text to display in the status bar when failed to open the specified Volume"));
 }
 
 void MainWindow::onActionAppVersion_triggered()
@@ -1176,36 +1179,6 @@ void MainWindow::onMenuHistory_triggered(QAction *action)
 }
 
 
-void MainWindow::resetStatusLabel()
-{
-    if(m_pageCaption.isEmpty())
-        return;
-    // free space on the right of the menus
-    int menusWidth = 0;
-    foreach(QAction* action, ui->menuBar->actions()) {
-        if(action->isVisible())
-            menusWidth = qMax(menusWidth, ui->menuBar->actionGeometry(action).right());
-    }
-    int available = ui->menuBar->width() - menusWidth - m_fullscreenButton->sizeHint().width() - 40;
-    QString text = ui->statusLabel->fontMetrics().elidedText(m_pageCaption, Qt::ElideMiddle, qMax(0, available));
-    if(text != ui->statusLabel->text()) {
-        ui->statusLabel->setText(text);
-        // the menu bar lays out its corner widget again only when it is shown,
-        // otherwise menus stay hidden behind the extension button after the text gets shorter
-        if(QWidget* corner = ui->menuBar->cornerWidget()) {
-            corner->hide();
-            corner->show();
-        }
-    }
-    ui->statusLabel->setToolTip(m_pageCaption);
-}
-
-void MainWindow::showStatusText(const QString &text)
-{
-    m_pageCaption = text;
-    resetStatusLabel();
-}
-
 void MainWindow::resizeEvent(QResizeEvent *e)
 {
     if(m_exifDialog && m_exifDialog->parent()) {
@@ -1216,8 +1189,6 @@ void MainWindow::resizeEvent(QResizeEvent *e)
         ui->catalogSplitter->setSizes(sizes);
     }
     QMainWindow::resizeEvent(e);
-    // after the menu bar is laid out for the new width
-    QTimer::singleShot(0, this, [this]{ resetStatusLabel(); });
 }
 
 static int touchCount = -1;
@@ -1481,8 +1452,10 @@ void MainWindow::onActionShowToolBar_triggered(bool showToolBar)
 
 void MainWindow::onActionShowPageBar_triggered(bool showSliderBar)
 {
-    if(m_pageBarAction)
-        m_pageBarAction->setVisible(showSliderBar && m_pageManager.size() > 0);
+    if(showSliderBar)
+        ui->pageFrame->show();
+    else
+        ui->pageFrame->hide();
     qApp->setShowSliderBar(showSliderBar);
 }
 
@@ -1490,10 +1463,10 @@ void MainWindow::onActionShowStatusBar_triggered(bool showStatusBar)
 {
     if(showStatusBar) {
         setWindowTitle(m_volumeCaption);
-        ui->statusLabel->show();
-        resetStatusLabel();
+        ui->statusBar->show();
+        ui->statusLabel->setText(m_pageCaption);
     } else {
-        ui->statusLabel->hide();
+        ui->statusBar->hide();
         setWindowTitle(m_pageCaption);
     }
     qApp->setShowStatusBar(showStatusBar);
@@ -1596,6 +1569,10 @@ void MainWindow::onActionLargeToolbarIcons_triggered(bool enable)
 	if (enable) {
 //		int sliderHeight = (int)(1.5*m_pageSliderHeight);
 		ui->pageSlider->setMinimumHeight(m_pageSliderHeight);
+		if (ui->pageFrame->isVisible()) {
+			ui->pageFrame->setVisible(false);
+			ui->pageFrame->setVisible(true);
+		}
 	}
 	else {
 		ui->pageSlider->setMinimumHeight(0);
@@ -1975,7 +1952,7 @@ void MainWindow::onActionSaveBookmark_triggered()
     QString path = QDir::fromNativeSeparators(m_pageManager.currentPagePath());
     qApp->addBookMark(path);
     makeBookmarkMenu();
-    m_toast->showMessage(tr("Bookmark Saved."), path, QString(), false);
+    ui->statusBar->showMessage(tr("Bookmark Saved."));
 }
 
 void MainWindow::onActionClearBookmarks_triggered()

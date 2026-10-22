@@ -28,7 +28,7 @@ ImageView::ImageView(QWidget *parent)
     , m_readyStack(0)
     , m_lastScreenPixelRatio(1.0)
 {
-    m_zoomScale = 1.0;
+    m_zoomAnchor = QPoint(-1, -1);
 
     QGraphicsScene* scene = new QGraphicsScene(this);
     setScene(scene);
@@ -275,12 +275,18 @@ void ImageView::setSceneRectMode(bool scrolled, const QRect &sceneRect)
 
     // Correct the scroll bar so that it keep at the center of the viewport
     // when the image display magnification is changed.
+    // With 'Scroll with cursor when zooming', scrollOnZoomMode() above has already placed the images where the mouse
+    // pans them, so a zoom goes to where the cursor points and does not jump at the next mouse move.
+    // Without the mouse over the images (zooming with the keys), the zoom keeps the center
+    bool pannedByCursor = newMode && !m_loupeEnable && qApp->ScrollWithCursorWhenZooming()
+            && viewport()->rect().contains(viewport()->mapFromGlobal(QCursor::pos()));
     bool scaleChanged = false;
     if (m_readyStack == 1) {
         qreal newScale = m_pages[0].DrawScale;
         scaleChanged = m_beforeScale != newScale;
         if(!qApp->Fitting()) {
-            if (!m_loupeEnable && m_beforeScale > 0 && m_beforeScale != newScale) {
+            // zoomBy() keeps the point under the mouse in place itself when zooming with the wheel
+            if (!m_loupeEnable && !pannedByCursor && m_zoomAnchor.x() < 0 && m_beforeScale > 0 && m_beforeScale != newScale) {
                 int vw = 0.5*viewport()->width();
                 int vh = 0.5*viewport()->height();
                 int sx2 = (sx+vw)/m_beforeScale*newScale-vw;
@@ -643,8 +649,8 @@ void ImageView::wheelEvent(QWheelEvent *event)
     QAction* action = qApp->mouseActions().getActionByValue(mv);
     if(action != nullptr) {
         QString text = action->objectName();
-        if (text == "actionZoomIn" || text == "actionZoomIn") {
-            action->trigger();
+        if (text == "actionZoomIn" || text == "actionZoomOut") {
+            zoomByWheel(delta_y, text == "actionZoomIn", event->position().toPoint());
             event->accept();
             return;
         }
@@ -706,9 +712,10 @@ void ImageView::on_fitToWindow_triggered(bool enable)
     if(!enable) {
         return;
     }
+    // fitting is on before fittingChanged, so that the Fitting button follows
     qApp->setImageFitMode(qvEnums::FitToRect);
-    emit fittingChanged(qvEnums::FitToRect);
     qApp->setFitting(true);
+    emit fittingChanged(qvEnums::FitToRect);
     readyForPaint();
 }
 
@@ -718,8 +725,8 @@ void ImageView::on_fitToWidth_triggered(bool enable)
         return;
     }
     qApp->setImageFitMode(qvEnums::FitToWidth);
-    emit fittingChanged(qvEnums::FitToWidth);
     qApp->setFitting(true);
+    emit fittingChanged(qvEnums::FitToWidth);
     readyForPaint();
 }
 
@@ -738,37 +745,75 @@ void ImageView::on_rightSideBook_triggered(bool rightSideBook)
 }
 
 // Each zoom step multiplies the displayed scale, starting from the fitted scale when fitting is on.
-// The scale stops at 100% (of the original image) when a step goes over it or ends near it
+// The scale stops at 100% (of the original image) when a step goes over it, and for the keys also when it ends near it
 #define ZOOM_STEP 1.25
+#define ZOOM_SNAP_RANGE 0.1
+// the wheel zooms finely: 5% for each notch, smooth wheels and touchpads zoom by their fraction of a notch
+#define WHEEL_ZOOM_STEP 1.05
 #define MIN_ZOOM 0.02
 #define MAX_ZOOM 16.0
 
-void ImageView::zoomBy(qreal factor)
+void ImageView::zoomBy(qreal factor, qreal snapRange, const QPoint& anchor)
 {
     if(!m_pages.size())
         return;
     // the displayed scale is relative to the original image, the loaded image may be shrunk
-    qreal current = qApp->Fitting() ? m_pages[0].DrawScale * m_pages[0].sourceRatio() : m_zoomScale;
+    qreal current = qApp->Fitting() ? m_pages[0].DrawScale * m_pages[0].sourceRatio() : qApp->ZoomScale();
     if(qApp->Fitting()) {
         qApp->setFitting(false);
         emit fittingChanged(qApp->ImageFitMode());
     }
     qreal next = current * factor;
-    if(qAbs(current - 1.0) > 0.01 && ((current < 1.0) != (next < 1.0) || qAbs(next - 1.0) < 0.1))
+    if(qAbs(current - 1.0) > 0.01 && ((current < 1.0) != (next < 1.0) || qAbs(next - 1.0) < snapRange))
         next = 1.0;
     next = qBound(MIN_ZOOM, next, MAX_ZOOM);
-    m_zoomScale = next;
+    qApp->setZoomScale(next);
+
+    // the point of the images under the anchor, relative to the rectangle of the images
+    auto pagesRect = [this] {
+        QRectF rect;
+        for(const PageContent& page : m_pages)
+            if(page.GrItem)
+                rect = rect.united(page.GrItem->sceneBoundingRect());
+        return rect;
+    };
+    QRectF before = pagesRect();
+    // with 'Scroll with cursor when zooming', the position of the mouse scrolls the images instead
+    bool anchored = anchor.x() >= 0 && !before.isEmpty() && !qApp->ScrollWithCursorWhenZooming();
+    QPointF relative;
+    if(anchored) {
+        QPointF scenePos = mapToScene(anchor);
+        relative = QPointF((scenePos.x() - before.left()) / before.width(), (scenePos.y() - before.top()) / before.height());
+    }
+    m_zoomAnchor = anchored ? anchor : QPoint(-1, -1);
     readyForPaint();
+    m_zoomAnchor = QPoint(-1, -1);
+    if(anchored) {
+        // scroll the same point of the zoomed images back under the anchor
+        QRectF after = pagesRect();
+        QPointF target(after.left() + relative.x() * after.width(), after.top() + relative.y() * after.height());
+        QPoint delta = mapFromScene(target) - anchor;
+        horizontalScrollBar()->setValue(horizontalScrollBar()->value() + delta.x());
+        verticalScrollBar()->setValue(verticalScrollBar()->value() + delta.y());
+    }
 }
 
 void ImageView::on_scaleUp_triggered()
 {
-    zoomBy(ZOOM_STEP);
+    zoomBy(ZOOM_STEP, ZOOM_SNAP_RANGE);
 }
 
 void ImageView::on_scaleDown_triggered()
 {
-    zoomBy(1.0 / ZOOM_STEP);
+    zoomBy(1.0 / ZOOM_STEP, ZOOM_SNAP_RANGE);
+}
+
+void ImageView::zoomByWheel(int angleDelta, bool zoomIn, const QPoint& anchor)
+{
+    if(angleDelta == 0)
+        return;
+    qreal factor = qPow(WHEEL_ZOOM_STEP, qAbs(angleDelta) / qreal(Q_MOUSE_DELTA));
+    zoomBy(zoomIn ? factor : 1.0 / factor, 0, anchor);
 }
 
 void ImageView::on_wideImageAsOneView_triggered(bool wideImage)
@@ -883,6 +928,6 @@ qreal ImageView::getZoomScale()
     // In this case, the content drawn is automatically scaled by devicePixelRatio,
     // but avoid scaling only the image.
     // QScreen* screen0 = screen();
-    return m_zoomScale;
+    return qApp->ZoomScale();
 }
 
