@@ -5,6 +5,7 @@
 #include <QtWidgets>
 
 #include "exif.h"
+#include "promptreader.h"
 #include "qvmovie.h"
 #include "qv_init.h"
 
@@ -67,6 +68,10 @@ public:
      * @brief Info is Exif Information of the image(JPEG only)
      */
     easyexif::EXIFInfo Info;
+    /**
+     * @brief Prompt is the generation data of Stable Diffusion tools (if any)
+     */
+    PromptInfo Prompt;
 
     size_t FileLength;
     ImageRetouch RetouchParam;
@@ -84,6 +89,7 @@ public:
         , ImportSize(rhs.ImportSize)
         , Path(rhs.Path)
         , Info(rhs.Info)
+        , Prompt(rhs.Prompt)
         , FileLength(rhs.FileLength)
         , ResizeMode(rhs.ResizeMode)
     {}
@@ -96,6 +102,7 @@ public:
         BaseSize = rhs.BaseSize;
         ImportSize = rhs.ImportSize;
         Info = rhs.Info;
+        Prompt = rhs.Prompt;
         FileLength = rhs.FileLength;
         ResizeMode = rhs.ResizeMode;
         return *this;

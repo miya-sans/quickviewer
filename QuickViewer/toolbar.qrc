@@ -75,6 +75,9 @@
     </qresource>
     <qresource prefix="/">
         <file>icons/flat/bars.svg</file>
+        <file>icons/flat/chevron-down.svg</file>
+        <file>icons/flat/chevron-right.svg</file>
+        <file>icons/flat/close.svg</file>
         <file>icons/flat/copy.svg</file>
         <file>icons/flat/dir.svg</file>
         <file>icons/flat/dualview.svg</file>

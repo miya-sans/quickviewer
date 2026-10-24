@@ -128,6 +128,8 @@ SOURCES += \
     src/widgets/pageslider.cpp \
     src/widgets/toastnotification.cpp \
     src/widgets/copyfolderdialog.cpp \
+    src/widgets/promptoverlay.cpp \
+    src/models/promptreader.cpp \
     src/qlanguageselector/qlanguageselector.cpp \
     src/qnamedpipe/qnamedpipe.cpp \
     src/qfullscreenframe/qinnerframe.cpp \
@@ -174,6 +176,8 @@ HEADERS  += \
     src/widgets/pageslider.h \
     src/widgets/toastnotification.h \
     src/widgets/copyfolderdialog.h \
+    src/widgets/promptoverlay.h \
+    src/models/promptreader.h \
     src/qlanguageselector/qlanguageselector.h \
     src/qnamedpipe/qnamedpipe.h \
     src/qfullscreenframe/qinnerframe.h \

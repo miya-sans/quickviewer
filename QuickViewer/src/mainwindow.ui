@@ -293,6 +293,7 @@
     <addaction name="actionShowPageBar"/>
     <addaction name="actionShowStatusBar"/>
     <addaction name="actionOpenExif"/>
+    <addaction name="actionShowPrompt"/>
     <addaction name="separator"/>
     <addaction name="actionBeginAsFullscreen"/>
     <addaction name="actionRestoreWindowState"/>
@@ -649,6 +650,14 @@
    </property>
    <property name="text">
     <string>Show Status&amp;Bar</string>
+   </property>
+  </action>
+  <action name="actionShowPrompt">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string extracomment="Shows the prompt and the settings of images made with Stable Diffusion over the image">Sho&amp;w Prompt</string>
    </property>
   </action>
   <action name="actionShowPageBar">

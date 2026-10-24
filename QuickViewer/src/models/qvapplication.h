@@ -260,6 +260,25 @@ public:
     void setCopyDestinationFolder(QString copyDestinationFolder);
     const QStringList& RecentCopyDestinationFolders() const { return m_recentCopyDestinationFolders; }
 
+    // Prompt overlay (saved immediately)
+    bool ShowPromptOverlay() { return m_showPromptOverlay; }
+    void setShowPromptOverlay(bool show);
+    bool PromptOverlayAllSettings() { return m_promptOverlayAllSettings; }
+    void setPromptOverlayAllSettings(bool show);
+    /**
+     * @brief PromptOverlaySize the size set by the user, or an invalid size when it fits the text
+     */
+    QSize PromptOverlaySize() { return m_promptOverlaySize; }
+    /**
+     * @brief PromptOverlayCorner the corner (Qt::Corner) of the view nearest to the overlay
+     */
+    int PromptOverlayCorner() { return m_promptOverlayCorner; }
+    /**
+     * @brief PromptOverlayOffset distance from PromptOverlayCorner
+     */
+    QPoint PromptOverlayOffset() { return m_promptOverlayOffset; }
+    void setPromptOverlayGeometry(QSize size, int corner, QPoint offset);
+
     // History
     int MaxHistoryCount() { return m_maxHistoryCount; }
     void setMaxHistoryCount (int maxHistoryCount) { m_maxHistoryCount = maxHistoryCount; }
@@ -347,8 +366,9 @@ public:
     /**
      * @brief flatIcon a monochrome icon of "icons/flat" colored for the current theme
      * @param name file name without ".svg", e.g. "next"
+     * @param color used instead of the color of the theme when it is valid
      */
-    QIcon flatIcon(const QString& name);
+    QIcon flatIcon(const QString& name, const QColor& color = QColor());
 
     void registDefaultKeyMap();
     void registDefaultMouseMap();
@@ -502,6 +522,11 @@ private:
     QString m_nativeStyleName;
     QString m_copyDestinationFolder;
     QStringList m_recentCopyDestinationFolders;
+    bool m_showPromptOverlay;
+    bool m_promptOverlayAllSettings;
+    QSize m_promptOverlaySize;
+    int m_promptOverlayCorner;
+    QPoint m_promptOverlayOffset;
 
     QSettings* m_settings;
     BookProgressManager* m_bookshelfManager;
