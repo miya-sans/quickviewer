@@ -181,6 +181,7 @@ void QVApplication::registDefaultKeyMap()
     m_keyActions.addDefaultKey("actionSetCopyFolder", QKeySequence("Shift+E"));
     m_keyActions.addDefaultKey("actionMaximizeOrNormal", QKeySequence("Return, Num+Enter"));
     m_keyActions.addDefaultKey("actionShowPrompt", QKeySequence("P"));
+    m_keyActions.addDefaultKey("actionShowCaption", QKeySequence("O"));
 }
 
 void QVApplication::registDefaultMouseMap()
@@ -267,6 +268,7 @@ void QVApplication::registActions(Ui::MainWindow *ui)
     m_keyActions.registAction("actionShowToolBar", ui->actionShowToolBar, groupName);
     m_keyActions.registAction("actionShowStatusBar", ui->actionShowStatusBar, groupName);
     m_keyActions.registAction("actionShowPrompt", ui->actionShowPrompt, groupName);
+    m_keyActions.registAction("actionShowCaption", ui->actionShowCaption, groupName);
     m_keyActions.registAction("actionShowPageBar", ui->actionShowPageBar, groupName);
     m_keyActions.registAction("actionShowMenuBar", ui->actionShowMenuBar, groupName);
     m_keyActions.registAction("actionShowFullscreenSignage", ui->actionShowFullscreenSignage, groupName);
@@ -508,6 +510,22 @@ void QVApplication::setPromptOverlayGeometry(QSize size, int corner, QPoint offs
     m_settings->setValue("PromptOverlay/Offset", offset);
 }
 
+void QVApplication::setShowCaptionOverlay(bool show)
+{
+    m_showCaptionOverlay = show;
+    m_settings->setValue("CaptionOverlay/Visible", show);
+}
+
+void QVApplication::setCaptionOverlayGeometry(QSize size, int alignment, QPoint offset)
+{
+    m_captionOverlaySize = size;
+    m_captionOverlayAlignment = alignment;
+    m_captionOverlayOffset = offset;
+    m_settings->setValue("CaptionOverlay/Size", size);
+    m_settings->setValue("CaptionOverlay/Alignment", alignment);
+    m_settings->setValue("CaptionOverlay/Offset", offset);
+}
+
 void QVApplication::setUiTheme(QString uiTheme)
 {
     QFile file(":/themes/"+uiTheme+".qss"); // Resource files
@@ -669,6 +687,14 @@ void QVApplication::loadSettings()
     m_promptOverlaySize = m_settings->value("Size", QSize()).toSize();
     m_promptOverlayCorner = m_settings->value("Corner", int(Qt::BottomRightCorner)).toInt();
     m_promptOverlayOffset = m_settings->value("Offset", QPoint(12, 12)).toPoint();
+    m_settings->endGroup();
+
+    // CaptionOverlay: off until O is pressed, at the bottom center, in the size of the text
+    m_settings->beginGroup("CaptionOverlay");
+    m_showCaptionOverlay = m_settings->value("Visible", false).toBool();
+    m_captionOverlaySize = m_settings->value("Size", QSize()).toSize();
+    m_captionOverlayAlignment = m_settings->value("Alignment", int(Qt::AlignHCenter | Qt::AlignBottom)).toInt();
+    m_captionOverlayOffset = m_settings->value("Offset", QPoint(0, 12)).toPoint();
     m_settings->endGroup();
 
     // Folder

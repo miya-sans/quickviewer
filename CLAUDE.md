@@ -18,18 +18,24 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
 
 ## Changes in this fork (newest first)
 
-1. **Prompt overlay** (P, View › Show Prompt), like [SD Prompt Reader](https://github.com/receyuki/stable-diffusion-prompt-reader). The user chose style A of the mockups (a panel with everything visible).
+1. **Caption editor** (O, View › Show Caption Editor) for training captions: the `.txt` file with the same name as the image, in the same folder (`image.png` → `image.txt`, as sd-scripts reads it). It has the look and the move/resize/remember behavior of the prompt overlay, at the bottom center by default.
+   - `models/captionfile.*` reads and writes the file. Lines starting with `---===---` (`multiline_caption_separator` of sd-scripts' `enable_multiline_caption`) split it into caption candidates, and the text after `#` on a separator line is the candidate's name. A file starting with a separator names the first candidate (sd-scripts drops the empty one before it). Blank lines around candidates are trimmed like sd-scripts does; CRLF, a final newline and a UTF-8 BOM are kept.
+   - `widgets/captionoverlay.*`: a box per candidate. The title rows (an editable name, and move up, move down, copy and remove under the mouse) appear only with several candidates or a named first one. The header has the file name (• when modified, "(new)" without a file), add candidate, save and close.
+   - Keys: the edits accept every ShortcutOverride except F1–F35, so typed keys never turn pages. Esc gives the focus back to the image, Ctrl+S saves, Tab/Shift+Tab go through the boxes, Enter in a name goes to its text.
+   - Saving: Ctrl+S or the save button, and automatically (with a toast) when the image changes, the editor is hidden or the window closes. A deleted image's caption is not written again. Only images in folders, not archives; in dual view the first image.
+   - It is off until O is pressed. Position is an alignment (left/center/right, top/bottom) and an offset (`[CaptionOverlay]` in the ini); dropping it within 24 px of the center snaps it to the center.
+2. **Prompt overlay** (P, View › Show Prompt), like [SD Prompt Reader](https://github.com/receyuki/stable-diffusion-prompt-reader). The user chose style A of the mockups (a panel with everything visible).
    - `models/promptreader.*` reads A1111/Forge/Forge Neo, ComfyUI, NovelAI (text chunks and the gzip data in the alpha channel), InvokeAI, Easy Diffusion, Fooocus, StableSwarmUI and Draw Things from PNG (tEXt/zTXt/iTXt/eXIf), JPEG and WebP (EXIF UserComment). It has its own small inflate because `qUncompress()` can't read gzip.
    - It runs in `futureLoadImageFromFileVolumeImpl` (worker threads) on the bytes already loaded, and fills `ImageContent::Prompt`. Its regular expressions are `thread_local`.
    - ComfyUI is read by following the graph back from the sampler nearest to SaveImage. It handles KSampler and SamplerCustomAdvanced (noise, guider, sampler, sigmas), SDXL Clip G/L, Flux guidance, ConditioningZeroOut, and the shift of ModelSampling* nodes.
    - `widgets/promptoverlay.*`: header (tool, copy all in A1111 format, close), Prompt, Negative prompt, a grid (Model, Sampler, Schedule type, Steps, CFG, Shift, Seed, Size; a click copies a value) and "All settings". Weights and LoRA tags are tinted blue (the user asked to keep that one color), brackets are dimmed, and escaped `\(` `\)` are plain text.
    - It is shown only for images with readable data. Dragging the header moves it, the edges resize it, and double-clicking the header resets it to the bottom right in the size of the text. Size, nearest corner and offset are saved immediately (`[PromptOverlay]` in the ini).
    - It accepts all mouse and wheel events so that nothing reaches the image view under it (the wheel zooms there), and its widgets never take the keyboard focus.
-2. **Layout (as of a7610f0, which the user chose to keep).**
+3. **Layout (as of a7610f0, which the user chose to keep).**
    - The standard Windows title bar, the menu bar and the toolbar are at the top. The bottom has two lines: the page frame (`(64/89)` and the slider) and the status bar with the image information.
    - Two layouts were tried and reverted at the user's request: the information and slider in the top bars (73a734f), and the menu bar merged with the title bar through `WM_NCCALCSIZE`/`WM_NCHITTEST` (e459089, b0c052e). Their notes are in the git history if that idea comes back.
-3. **Colors.** The Flat theme uses neutral greys: the slider fill, selections, tabs and tags (no blue accent).
-4. **Zoom.**
+4. **Colors.** The Flat theme uses neutral greys: the slider fill, selections, tabs and tags (no blue accent).
+5. **Zoom.**
    - **Keys** (`ImageView::zoomBy`): zoom in and zoom out multiply the displayed scale by 1.25, starting from the fitted scale. A step that passes 100%, or ends within 10% of it, stops at 100%. Limits are 2% to 1600%.
    - **Mouse wheel** (`ImageView::zoomByWheel`): the plain wheel, Ctrl+wheel and right button+wheel zoom finely, 5% per notch (`WHEEL_ZOOM_STEP`; the user's wheel is very sensitive). Smooth wheels and touchpads zoom by their fraction of a notch, and only passing 100% stops at 100%.
      - Pages are turned with the keys and the mouse back/forward buttons. Settings revision 5 migrates the former default wheel bindings.
@@ -39,32 +45,32 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
      - **With that option off,** the point under the cursor stays in place (`zoomBy` with an anchor).
    - **Status text:** the zoom in the status text updates on every zoom step (`zoomingChanged` also fires when the drawn scale changes).
    - **Remembered:** the manual zoom is `QVApplication::ZoomScale()` (`View/ZoomScale`), relative to the *original* image. It is kept when turning pages, opening files and restarting. Large images may be loaded shrunk; `PageContent::sourceRatio()` is loaded size ÷ original size.
-5. **Fitting.**
+6. **Fitting.**
    - Fitting is remembered (`View/Fitting`): opening a file or starting the app keeps the last fitting and zoom. It is not forced on.
    - **F zooms to fit** (`actionFitToWindow`), every time. Fit to window and Fit to width are an exclusive `QActionGroup`, so triggering the checked one fits again instead of unchecking it (before, every second press did nothing).
    - **M, F12 and Num+* toggle fitting** (`actionFitting`). Settings revision 6 moved F from the toggle back to Fit to window.
    - Fit also enlarges small images (`DontEnlargeSmallImagesOnFitting=false`).
-6. **Window.** Size, position and maximized state are restored like a web browser, but never fullscreen. A first start opens at 3/4 × 4/5 of the screen, centered.
-7. **Keys.** Esc closes the window (or leaves fullscreen).
-8. **Application icon.** A lighter greyscale version of the original icon (`QuickViewer/icons/appicon.ico`).
-9. **Delete.**
+7. **Window.** Size, position and maximized state are restored like a web browser, but never fullscreen. A first start opens at 3/4 × 4/5 of the screen, centered.
+8. **Keys.** Esc closes the window (or leaves fullscreen).
+9. **Application icon.** A lighter greyscale version of the original icon (`QuickViewer/icons/appicon.ico`).
+10. **Delete.**
    - Del and Q delete without asking.
    - A toast notification shows the deleted path (`widgets/toastnotification.*`).
-10. **Copy to Folder.**
+11. **Copy to Folder.**
    - E copies the image to a folder and Shift+E chooses that folder. With no folder set, the dialog asks first.
    - The dialog (`widgets/copyfolderdialog.*`) is an editable dropdown: paste a path, pick a recent copy folder or a folder from the viewing history, or use Browse.
    - The folder is saved immediately, and the toast has an "Open folder" button.
-11. **Flat theme.**
+12. **Flat theme.**
    - `themes/Flat.qss` is the default theme. Any theme other than "Default" forces the Fusion style; native Windows styles ignore the compact padding.
    - The icons are monochrome SVGs in `icons/flat/` and `themes/flat/`, colored at runtime by `QVApplication::flatIcon()` from the `icon-color:` comment in the qss.
-12. **Startup.** The folder panel is off at startup. A saved "Stay on top" is applied at startup.
-13. **Stability and performance.**
+13. **Startup.** The folder panel is off at startup. A saved "Stay on top" is applied at startup.
+14. **Stability and performance.**
     - Deleting the last image no longer crashes (`PageManager::reloadVolume`, null guards).
     - The folder is watched with `QFileSystemWatcher`, so added and removed images appear live.
     - Prefetch is limited by memory (about 800MB on 64-bit).
     - Large images are decoded at a reduced size, and a failed decode is retried once.
     - The allocation limit is 4096MB on 64-bit.
-14. **Windows build fixes.**
+15. **Windows build fixes.**
     - `CONFIG += no_batch` in `QuickViewer.pro`. Without it NMake batch rules compiled the wrong `main.cpp`, and `QuickViewer.exe` opened the file-association dialog.
     - The `SHFileOperation` buffer fix is in `mainwindowforwindows.cpp`.
 
@@ -86,9 +92,10 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
     | SetCopyFolder | Shift+E |
     | ExitApplicationOrFullscreen | Esc |
     | ShowPrompt | P |
+    | ShowCaption | O |
 
   - **Mouse** (`addDefaultKey` in `registDefaultMouseMap`): the wheel zooms, back/forward buttons turn pages, the middle button toggles fullscreen.
-  - **Other defaults**: black background with no checkered pattern, no delete confirmation, theme "Flat", no folder panel at startup (`ShowOptionViewOnStartup`), and the prompt overlay on (`PromptOverlay/Visible`).
+  - **Other defaults**: black background with no checkered pattern, no delete confirmation, theme "Flat", no folder panel at startup (`ShowOptionViewOnStartup`), the prompt overlay on (`PromptOverlay/Visible`), and the caption editor off (`CaptionOverlay/Visible`).
   - New actions with a default key need no migration: keys missing from `[KeyConfig]` use the default.
 - **Migration.** `QVApplication::migrateSettings()` upgrades existing ini files using `Others/SettingsRevision` (`QV_SETTINGS_REVISION`, currently 6).
   - When you change a default, add a new `revision < N` block and bump the revision.
@@ -151,5 +158,5 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
 
 ## Ideas not done yet
 
-- Translations (`QuickViewer/translations/*.ts`) do not have the new strings: Copy to Folder, the notifications, the folder dialog, and the prompt overlay.
+- Translations (`QuickViewer/translations/*.ts`) do not have the new strings: Copy to Folder, the notifications, the folder dialog, the prompt overlay and the caption editor.
 - When fitting is turned off with M, the view zooms one 1.25 step from the fitted scale. A toggle to 100% may be preferred; ask the user.

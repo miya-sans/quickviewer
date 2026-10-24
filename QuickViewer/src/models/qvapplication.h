@@ -279,6 +279,23 @@ public:
     QPoint PromptOverlayOffset() { return m_promptOverlayOffset; }
     void setPromptOverlayGeometry(QSize size, int corner, QPoint offset);
 
+    // Caption overlay (saved immediately)
+    bool ShowCaptionOverlay() { return m_showCaptionOverlay; }
+    void setShowCaptionOverlay(bool show);
+    /**
+     * @brief CaptionOverlaySize the size set by the user, or an invalid size when it fits the text
+     */
+    QSize CaptionOverlaySize() { return m_captionOverlaySize; }
+    /**
+     * @brief CaptionOverlayAlignment the side of the view (Qt::Alignment: left, center or right, and top or bottom)
+     */
+    int CaptionOverlayAlignment() { return m_captionOverlayAlignment; }
+    /**
+     * @brief CaptionOverlayOffset distance from the side (from the center: signed)
+     */
+    QPoint CaptionOverlayOffset() { return m_captionOverlayOffset; }
+    void setCaptionOverlayGeometry(QSize size, int alignment, QPoint offset);
+
     // History
     int MaxHistoryCount() { return m_maxHistoryCount; }
     void setMaxHistoryCount (int maxHistoryCount) { m_maxHistoryCount = maxHistoryCount; }
@@ -527,6 +544,10 @@ private:
     QSize m_promptOverlaySize;
     int m_promptOverlayCorner;
     QPoint m_promptOverlayOffset;
+    bool m_showCaptionOverlay;
+    QSize m_captionOverlaySize;
+    int m_captionOverlayAlignment;
+    QPoint m_captionOverlayOffset;
 
     QSettings* m_settings;
     BookProgressManager* m_bookshelfManager;

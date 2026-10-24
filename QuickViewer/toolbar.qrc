@@ -77,6 +77,7 @@
         <file>icons/flat/bars.svg</file>
         <file>icons/flat/chevron-down.svg</file>
         <file>icons/flat/chevron-right.svg</file>
+        <file>icons/flat/chevron-up.svg</file>
         <file>icons/flat/close.svg</file>
         <file>icons/flat/copy.svg</file>
         <file>icons/flat/dir.svg</file>
@@ -93,11 +94,13 @@
         <file>icons/flat/next.svg</file>
         <file>icons/flat/open.svg</file>
         <file>icons/flat/pin.svg</file>
+        <file>icons/flat/plus.svg</file>
         <file>icons/flat/play.svg</file>
         <file>icons/flat/previous-fast.svg</file>
         <file>icons/flat/previous.svg</file>
         <file>icons/flat/rects.svg</file>
         <file>icons/flat/rotate-cw.svg</file>
+        <file>icons/flat/save.svg</file>
         <file>icons/flat/settings.svg</file>
         <file>icons/flat/sliders.svg</file>
         <file>icons/flat/star-off.svg</file>

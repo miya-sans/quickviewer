@@ -21,6 +21,7 @@
 #include "brightnesswindow.h"
 #include "toastnotification.h"
 #include "promptoverlay.h"
+#include "captionoverlay.h"
 #include "copyfolderdialog.h"
 
 #ifdef Q_OS_WIN
@@ -42,6 +43,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_fullscreenButton(nullptr)
     , m_toast(nullptr)
     , m_promptOverlay(nullptr)
+    , m_captionOverlay(nullptr)
 {
     ui->setupUi(this);
     m_menubarFontSize = ui->menuBar->font().pointSize();
@@ -128,6 +130,15 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_promptOverlay, &PromptOverlay::hideRequested, ui->actionShowPrompt, &QAction::trigger);
     ui->actionShowPrompt->setChecked(qApp->ShowPromptOverlay());
     connect(ui->actionShowPrompt, &QAction::triggered, this, &MainWindow::onActionShowPrompt_triggered);
+
+    // The caption file of the image (image.txt) is edited at the bottom center (O)
+    m_captionOverlay = new CaptionOverlay(ui->graphicsView);
+    connect(m_captionOverlay, &CaptionOverlay::notify, this, [this](const QString& message) {
+        m_toast->showMessage(message, QString(), QString(), false);
+    });
+    connect(m_captionOverlay, &CaptionOverlay::hideRequested, ui->actionShowCaption, &QAction::trigger);
+    ui->actionShowCaption->setChecked(qApp->ShowCaptionOverlay());
+    connect(ui->actionShowCaption, &QAction::triggered, this, &MainWindow::onActionShowCaption_triggered);
     connect(ui->actionCopyToFolder, SIGNAL(triggered()), this, SLOT(onActionCopyToFolder_triggered()));
     connect(ui->actionSetCopyFolder, SIGNAL(triggered()), this, SLOT(onActionSetCopyFolder_triggered()));
     connect(ui->actionExitFullscreen, SIGNAL(triggered()), this, SLOT(onActionExitFullscreen_triggered()));
@@ -413,6 +424,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 void MainWindow::closeEvent(QCloseEvent *)
 {
     m_onWindowClosing = true;
+    m_captionOverlay->saveChanges();
     delete m_contextMenu;
     m_contextMenu = nullptr;
     // saved without fullscreen, which is not restored
@@ -1050,6 +1062,7 @@ void MainWindow::onPageManager_pageChanged()
     int maxVolume = m_pageManager.size();
     if (maxVolume <= 0) {
         m_promptOverlay->setPrompt(PromptInfo());
+        m_captionOverlay->setImage(QString());
         return;
     }
     // PageSlider
@@ -1092,6 +1105,10 @@ void MainWindow::onPageManager_pageChanged()
         }
     }
     m_promptOverlay->setPrompt(prompt);
+
+    // the caption of the first image (in dual view), only for images in folders
+    m_captionOverlay->setImage(m_pageManager.isFolder() && m_pageManager.currentPageCount() > 0
+                               ? QDir::fromNativeSeparators(m_pageManager.currentPagePath()) : QString());
 }
 
 void MainWindow::onPageManager_volumeChanged(QString path)
@@ -1206,6 +1223,12 @@ void MainWindow::onActionShowPrompt_triggered(bool show)
 {
     qApp->setShowPromptOverlay(show);
     m_promptOverlay->setOverlayEnabled(show);
+}
+
+void MainWindow::onActionShowCaption_triggered(bool show)
+{
+    qApp->setShowCaptionOverlay(show);
+    m_captionOverlay->setOverlayEnabled(show);
 }
 
 void MainWindow::resizeEvent(QResizeEvent *e)
