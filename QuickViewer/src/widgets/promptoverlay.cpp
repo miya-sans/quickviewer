@@ -279,9 +279,6 @@ PromptOverlay::PromptOverlay(QAbstractScrollArea *view)
     headerLayout->setSpacing(2);
     headerLayout->addWidget(m_toolLabel);
     headerLayout->addStretch(1);
-    headerLayout->addWidget(createButton("copy", tr("Copy the prompts and settings (A1111 format)"), [this] {
-        copyText(m_prompt.toA1111Text(), tr("Copied the prompts and settings"));
-    }));
     headerLayout->addWidget(createButton("close", tr("Hide the prompt"), [this] { emit hideRequested(); }));
 
     QLabel* positiveTitle = new QLabel(tr("Prompt"));

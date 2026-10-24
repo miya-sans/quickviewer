@@ -183,7 +183,7 @@ CaptionOverlay::CaptionOverlay(QAbstractScrollArea *view)
     m_header = new QWidget(this);
     m_header->setFixedHeight(ROW_HEIGHT);
     m_header->setCursor(Qt::ArrowCursor);
-    m_header->setToolTip(tr("Drag to move the caption editor, double-click to put it back at the bottom center"));
+    m_header->setToolTip(tr("Drag to move the caption editor, double-click to put it back at the bottom left"));
     m_fileLabel = new QLabel(m_header);
     m_fileLabel->setObjectName("captionLabel");
     m_fileLabel->setFont(smallFont(font()));
@@ -839,8 +839,8 @@ void CaptionOverlay::storeGeometry()
 void CaptionOverlay::resetGeometry()
 {
     m_customSize = QSize();
-    m_alignment = Qt::AlignHCenter | Qt::AlignBottom;
-    m_offset = QPoint(0, OVERLAY_MARGIN);
+    m_alignment = Qt::AlignLeft | Qt::AlignBottom;
+    m_offset = QPoint(OVERLAY_MARGIN, OVERLAY_MARGIN);
     storeGeometry();
     relayout();
 }

@@ -689,12 +689,12 @@ void QVApplication::loadSettings()
     m_promptOverlayOffset = m_settings->value("Offset", QPoint(12, 12)).toPoint();
     m_settings->endGroup();
 
-    // CaptionOverlay: off until O is pressed, at the bottom center, in the size of the text
+    // CaptionOverlay: off until O is pressed, at the bottom left, in the size of the text
     m_settings->beginGroup("CaptionOverlay");
     m_showCaptionOverlay = m_settings->value("Visible", false).toBool();
     m_captionOverlaySize = m_settings->value("Size", QSize()).toSize();
-    m_captionOverlayAlignment = m_settings->value("Alignment", int(Qt::AlignHCenter | Qt::AlignBottom)).toInt();
-    m_captionOverlayOffset = m_settings->value("Offset", QPoint(0, 12)).toPoint();
+    m_captionOverlayAlignment = m_settings->value("Alignment", int(Qt::AlignLeft | Qt::AlignBottom)).toInt();
+    m_captionOverlayOffset = m_settings->value("Offset", QPoint(12, 12)).toPoint();
     m_settings->endGroup();
 
     // Folder

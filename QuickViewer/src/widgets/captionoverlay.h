@@ -18,7 +18,7 @@ class QVBoxLayout;
  * Edits the caption file of the displayed image (the ".txt" file with the same name) over the image view.
  * Each caption candidate of a file split by "---===---" lines has its own box, which can be added, removed,
  * moved and named (the comment of its separator line).
- * It looks and moves like PromptOverlay, and is put at the bottom center by default.
+ * It looks and moves like PromptOverlay, and is put at the bottom left by default (the prompt is at the bottom right).
  * Ctrl+S saves the caption, and the changes are also saved when the image changes or the editor is hidden
  */
 class CaptionOverlay : public QFrame
