@@ -65,11 +65,17 @@ public:
         document()->setDocumentMargin(0);
         viewport()->setCursor(Qt::IBeamCursor);
     }
+    struct Heights {
+        int line;
+        int lines;
+        int all;
+    };
     /**
-     * @brief contentHeight height of the first lines of the text in the width (all of them when lines is 0).
-     * The lines are measured in the layout, because fallback fonts (e.g. Japanese) make them taller than the font
+     * @brief contentHeights heights of the text in the width: its first line, its first lines and all of it.
+     * The lines are measured in the layout, because fallback fonts (e.g. Japanese) make them taller than the font.
+     * One layout gives all of them: laying out a copy of the text three times was slow when the images are turned fast
      */
-    int contentHeight(int width, int lines = 0) const
+    Heights contentHeights(int width, int lines) const
     {
         QScopedPointer<QTextDocument> doc(document()->clone());
         doc->setDefaultFont(font());
@@ -77,18 +83,21 @@ public:
         doc->setDocumentMargin(0);
         doc->setTextWidth(width);
         // lays out the whole document
-        const int height = qCeil(doc->size().height());
+        const int all = qCeil(doc->size().height());
+        Heights heights{all, all, all};
         int count = 0;
-        for(QTextBlock block = doc->begin(); lines > 0 && block.isValid(); block = block.next()) {
+        for(QTextBlock block = doc->begin(); block.isValid() && count < lines; block = block.next()) {
             const QTextLayout* layout = block.layout();
-            for(int i = 0; i < layout->lineCount(); i++) {
-                if(++count == lines) {
-                    const QTextLine line = layout->lineAt(i);
-                    return qMin(height, qCeil(layout->position().y() + line.y() + line.height()));
-                }
+            for(int i = 0; i < layout->lineCount() && count < lines; i++) {
+                const QTextLine line = layout->lineAt(i);
+                const int bottom = qMin(all, qCeil(layout->position().y() + line.y() + line.height()));
+                if(++count == 1)
+                    heights.line = bottom;
+                if(count == lines)
+                    heights.lines = bottom;
             }
         }
-        return height;
+        return heights;
     }
 
 protected:
@@ -416,7 +425,9 @@ void CaptionOverlay::leaveEvent(QEvent *event)
 QToolButton *CaptionOverlay::createButton(const QString &icon, const QString &toolTip, std::function<void()> clicked)
 {
     QToolButton* button = new QToolButton(this);
-    button->setIcon(qApp->flatIcon(icon, ICON_COLOR));
+    if(!m_icons.contains(icon))
+        m_icons.insert(icon, qApp->flatIcon(icon, ICON_COLOR));
+    button->setIcon(m_icons.value(icon));
     button->setIconSize(QSize(12, 12));
     button->setFixedSize(ROW_HEIGHT, ROW_HEIGHT);
     button->setToolTip(toolTip);
@@ -493,13 +504,30 @@ int CaptionOverlay::indexOf(QWidget *box) const
     return -1;
 }
 
-void CaptionOverlay::addCandidate()
+void CaptionOverlay::appendCandidate()
 {
-    Candidate c = createCandidate();
+    Candidate c = m_spareCandidates.isEmpty() ? createCandidate() : m_spareCandidates.takeLast();
     m_candidates << c;
     m_boxesLayout->addWidget(c.box);
     // children added to a visible widget are shown later, and the layout would not count them yet
     c.box->show();
+}
+
+void CaptionOverlay::releaseCandidate(int index)
+{
+    Candidate c = m_candidates.takeAt(index);
+    m_boxesLayout->removeWidget(c.box);
+    c.box->hide();
+    QSignalBlocker textBlocker(c.text);
+    QSignalBlocker nameBlocker(c.name);
+    c.name->clear();
+    c.text->clear();
+    m_spareCandidates << c;
+}
+
+void CaptionOverlay::addCandidate()
+{
+    appendCandidate();
     updateState();
     relayout();
     focusText(m_candidates.size() - 1);
@@ -511,11 +539,7 @@ void CaptionOverlay::removeCandidate(QWidget *box)
     if(index < 0 || m_candidates.size() <= 1)
         return;
     const bool focused = hasEditFocus();
-    Candidate c = m_candidates.takeAt(index);
-    m_boxesLayout->removeWidget(c.box);
-    c.box->hide();
-    // the clicked button belongs to the box
-    c.box->deleteLater();
+    releaseCandidate(index);
     updateState();
     relayout();
     if(focused)
@@ -548,18 +572,10 @@ void CaptionOverlay::load()
     const bool focused = hasEditFocus();
     m_file.load(m_imagePath);
     const QList<CaptionCandidate>& candidates = m_file.candidates();
-    while(m_candidates.size() > candidates.size()) {
-        Candidate c = m_candidates.takeLast();
-        m_boxesLayout->removeWidget(c.box);
-        c.box->hide();
-        c.box->deleteLater();
-    }
-    while(m_candidates.size() < candidates.size()) {
-        Candidate c = createCandidate();
-        m_candidates << c;
-        m_boxesLayout->addWidget(c.box);
-        c.box->show();
-    }
+    while(m_candidates.size() > candidates.size())
+        releaseCandidate(m_candidates.size() - 1);
+    while(m_candidates.size() < candidates.size())
+        appendCandidate();
     for(int i = 0; i < candidates.size(); i++) {
         const Candidate& c = m_candidates[i];
         QSignalBlocker textBlocker(c.text);
@@ -569,8 +585,8 @@ void CaptionOverlay::load()
         c.text->setPlainText(candidates[i].text);
         c.text->moveCursor(QTextCursor::Start);
     }
+    // the callers lay it out with updateVisibility()
     updateState();
-    relayout();
     // the editing goes on with the next image
     if(focused && !hasEditFocus())
         focusText(0);
@@ -601,6 +617,7 @@ void CaptionOverlay::updateState()
 
     // the titles are needed for several candidates, or for the name of the first one
     const bool titles = m_candidates.size() > 1 || !m_candidates.first().name->text().isEmpty();
+    const bool mouseOver = underMouse();
     for(int i = 0; i < m_candidates.size(); i++) {
         const Candidate& c = m_candidates[i];
         c.titleRow->setVisible(titles);
@@ -608,7 +625,8 @@ void CaptionOverlay::updateState()
         c.name->setPlaceholderText(tr("Caption %1").arg(i + 1));
         c.text->setPlaceholderText(tr("Empty caption"));
         setStyleProperty(c.box, "first", i == 0);
-        updateButtons(c.box, c.box->isVisible() && c.box->rect().contains(c.box->mapFromGlobal(QCursor::pos())));
+        // (the cursor position is asked only under the mouse: it is slow on X11)
+        updateButtons(c.box, mouseOver && c.box->isVisible() && c.box->rect().contains(c.box->mapFromGlobal(QCursor::pos())));
     }
 }
 
@@ -675,8 +693,8 @@ void CaptionOverlay::relayout()
     QList<Text> texts;
     for(const Candidate& c : m_candidates) {
         CaptionTextEdit* text = static_cast<CaptionTextEdit*>(c.text);
-        const int line = text->contentHeight(textWidth, 1);
-        texts << Text{text, line, qMax(line, text->contentHeight(textWidth)), 0};
+        const CaptionTextEdit::Heights heights = text->contentHeights(textWidth, 1);
+        texts << Text{text, heights.line, qMax(heights.line, heights.all), 0};
     }
 
     // the height of everything but the texts, whose current fixed heights are in the size hint.

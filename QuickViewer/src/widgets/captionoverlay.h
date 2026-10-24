@@ -2,6 +2,8 @@
 #define CAPTIONOVERLAY_H
 
 #include <QFrame>
+#include <QHash>
+#include <QIcon>
 #include <functional>
 
 #include "captionfile.h"
@@ -84,6 +86,15 @@ private:
 
     QToolButton* createButton(const QString& icon, const QString& toolTip, std::function<void()> clicked);
     Candidate createCandidate();
+    /**
+     * @brief appendCandidate adds an empty box at the end, reusing a hidden one when there is one.
+     * The boxes are kept, because creating them is slow when the images are turned fast
+     */
+    void appendCandidate();
+    /**
+     * @brief releaseCandidate takes a box out of the editor and keeps it hidden for appendCandidate()
+     */
+    void releaseCandidate(int index);
     int indexOf(QWidget* box) const;
     void addCandidate();
     void removeCandidate(QWidget* box);
@@ -125,6 +136,9 @@ private:
     QWidget* m_boxes;
     QVBoxLayout* m_boxesLayout;
     QList<Candidate> m_candidates;
+    QList<Candidate> m_spareCandidates;
+    // the icons are drawn once (from SVG)
+    QHash<QString, QIcon> m_icons;
 
     // the width set by the user (the height always fits the text), the side of the view it stays at and the distance from it
     QSize m_customSize;
