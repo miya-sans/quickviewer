@@ -19,6 +19,8 @@ class QVBoxLayout;
  * Each caption candidate of a file split by "---===---" lines has its own box, which can be added, removed,
  * moved and named (the comment of its separator line).
  * It looks and moves like PromptOverlay, and is put at the bottom left by default (the prompt is at the bottom right).
+ * Like the prompt, it is shown only for images that have a caption file. Its height fits the whole text,
+ * and the texts scroll only when they are taller than the view
  * Ctrl+S saves the caption, and the changes are also saved when the image changes or the editor is hidden
  */
 class CaptionOverlay : public QFrame
@@ -27,7 +29,7 @@ class CaptionOverlay : public QFrame
 public:
     explicit CaptionOverlay(QAbstractScrollArea* view);
     /**
-     * @brief setImage edits the caption of an image file (an empty path hides the editor, e.g. for archives)
+     * @brief setImage edits the caption of an image file (hidden without a caption file, or for an empty path, e.g. for archives)
      */
     void setImage(const QString& imagePath);
     /**
@@ -124,11 +126,10 @@ private:
     QVBoxLayout* m_boxesLayout;
     QList<Candidate> m_candidates;
 
-    // the size set by the user (invalid when it fits the text), the side of the view it stays at and the distance from it
+    // the width set by the user (the height always fits the text), the side of the view it stays at and the distance from it
     QSize m_customSize;
     Qt::Alignment m_alignment;
     QPoint m_offset;
-    int m_minimumHeight;
 
     DragMode m_dragMode;
     Qt::Edges m_resizeEdges;

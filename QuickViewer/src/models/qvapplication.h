@@ -283,7 +283,7 @@ public:
     bool ShowCaptionOverlay() { return m_showCaptionOverlay; }
     void setShowCaptionOverlay(bool show);
     /**
-     * @brief CaptionOverlaySize the size set by the user, or an invalid size when it fits the text
+     * @brief CaptionOverlaySize only the width set by the user is used (0 or less: the default width); the height fits the text
      */
     QSize CaptionOverlaySize() { return m_captionOverlaySize; }
     /**
