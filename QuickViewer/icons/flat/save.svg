@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" viewBox="0 0 160 160" xml:space="preserve">
+<style type="text/css">
+	.st0{fill:none;stroke:#231F20;stroke-width:10;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:10;}
+</style>
+<path class="st0" d="M20,25c0-2.8,2.2-5,5-5h90l25,25v90c0,2.8-2.2,5-5,5H25c-2.8,0-5-2.2-5-5V25z"/>
+<polyline class="st0" points="50,20 50,55 105,55 105,20 "/>
+<rect class="st0" x="45" y="90" width="70" height="50"/>
+</svg>

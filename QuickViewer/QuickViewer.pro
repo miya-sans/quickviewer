@@ -129,6 +129,8 @@ SOURCES += \
     src/widgets/toastnotification.cpp \
     src/widgets/copyfolderdialog.cpp \
     src/widgets/promptoverlay.cpp \
+    src/widgets/captionoverlay.cpp \
+    src/models/captionfile.cpp \
     src/models/promptreader.cpp \
     src/qlanguageselector/qlanguageselector.cpp \
     src/qnamedpipe/qnamedpipe.cpp \
@@ -177,6 +179,8 @@ HEADERS  += \
     src/widgets/toastnotification.h \
     src/widgets/copyfolderdialog.h \
     src/widgets/promptoverlay.h \
+    src/widgets/captionoverlay.h \
+    src/models/captionfile.h \
     src/models/promptreader.h \
     src/qlanguageselector/qlanguageselector.h \
     src/qnamedpipe/qnamedpipe.h \

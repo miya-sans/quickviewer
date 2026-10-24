@@ -16,6 +16,7 @@ class ThumbnailManager;
 class BrightnessWindow;
 class ToastNotification;
 class PromptOverlay;
+class CaptionOverlay;
 
 class MainWindow : public QMainWindow
 {
@@ -158,6 +159,7 @@ public slots:
     void onActionShowPageBar_triggered(bool showSliderBar);
     void onActionShowStatusBar_triggered(bool showStatusBar);
     void onActionShowPrompt_triggered(bool show);
+    void onActionShowCaption_triggered(bool show);
     void onActionShowMenuBar_triggered(bool showMenuBar);
 
     // Help
@@ -259,6 +261,7 @@ protected:
     QToolButton* m_fullscreenButton;
     ToastNotification* m_toast;
     PromptOverlay* m_promptOverlay;
+    CaptionOverlay* m_captionOverlay;
     /**
      * @brief m_geometryBeforeFullscreen window geometry saved when closed in fullscreen
      */

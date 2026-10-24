@@ -294,6 +294,7 @@
     <addaction name="actionShowStatusBar"/>
     <addaction name="actionOpenExif"/>
     <addaction name="actionShowPrompt"/>
+    <addaction name="actionShowCaption"/>
     <addaction name="separator"/>
     <addaction name="actionBeginAsFullscreen"/>
     <addaction name="actionRestoreWindowState"/>
@@ -658,6 +659,14 @@
    </property>
    <property name="text">
     <string extracomment="Shows the prompt and the settings of images made with Stable Diffusion over the image">Sho&amp;w Prompt</string>
+   </property>
+  </action>
+  <action name="actionShowCaption">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string extracomment="Shows an editor of the caption file (the .txt file with the same name as the image) over the image">Show Capti&amp;on Editor</string>
    </property>
   </action>
   <action name="actionShowPageBar">
