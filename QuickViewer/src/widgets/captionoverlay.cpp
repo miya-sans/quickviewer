@@ -29,12 +29,7 @@ static const char* OVERLAY_STYLESHEET =
     "#CaptionOverlay QToolButton:pressed { background-color: rgba(255, 255, 255, 80); }"
     "#CaptionOverlay QLineEdit { padding: 0px; margin: 0px; color: #8c8c8c; selection-background-color: #5c5c5c; selection-color: #ffffff; }"
     "#CaptionOverlay QLineEdit:focus { color: #dddddd; }"
-    "#CaptionOverlay QTextEdit { padding: 0px; margin: 0px; selection-background-color: #5c5c5c; selection-color: #ffffff; }"
-    "#CaptionOverlay QScrollBar:vertical { background: transparent; width: 6px; margin: 0px; }"
-    "#CaptionOverlay QScrollBar::handle:vertical { background-color: rgba(255, 255, 255, 60); min-height: 16px; }"
-    "#CaptionOverlay QScrollBar::handle:vertical:hover { background-color: rgba(255, 255, 255, 110); }"
-    "#CaptionOverlay QScrollBar::add-line:vertical, #CaptionOverlay QScrollBar::sub-line:vertical { height: 0px; }"
-    "#CaptionOverlay QScrollBar::add-page:vertical, #CaptionOverlay QScrollBar::sub-page:vertical { background: transparent; }";
+    "#CaptionOverlay QTextEdit { padding: 0px; margin: 0px; selection-background-color: #5c5c5c; selection-color: #ffffff; }";
 
 namespace {
 
@@ -62,8 +57,9 @@ public:
         setAcceptRichText(false);
         setFocusPolicy(Qt::ClickFocus);
         setFrameShape(QFrame::NoFrame);
+        // no scroll bars: the editor fits the text, and a text taller than the view scrolls with the wheel and the cursor
         setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
         document()->setDocumentMargin(0);
@@ -469,6 +465,8 @@ CaptionOverlay::Candidate CaptionOverlay::createCandidate()
     }
 
     c.text = new CaptionTextEdit(c.box);
+    // the texts always have fixed heights, set by relayout()
+    c.text->setFixedHeight(ROW_HEIGHT);
     QVBoxLayout* layout = new QVBoxLayout(c.box);
     layout->setContentsMargins(SECTION_MARGIN, 0, SECTION_MARGIN, SECTION_MARGIN);
     layout->setSpacing(0);
@@ -681,10 +679,9 @@ void CaptionOverlay::relayout()
         texts << Text{text, line, qMax(line, text->contentHeight(textWidth)), 0};
     }
 
-    // the height of everything but the texts.
-    // The nested layouts update their size hints later (LayoutRequest), so they are invalidated here
-    for(Text& text : texts)
-        text.edit->setFixedHeight(0);
+    // the height of everything but the texts, whose current fixed heights are in the size hint.
+    // The nested layouts update their size hints later (LayoutRequest), so they are invalidated here.
+    // (The texts are not shrunk to 0 for this: that resized them at once, and they were drawn so under load)
     for(QWidget* child : findChildren<QWidget*>()) {
         if(!child->layout())
             continue;
@@ -692,10 +689,12 @@ void CaptionOverlay::relayout()
         child->updateGeometry();
     }
     layout()->invalidate();
-    const int chrome = sizeHint().height();
+    int chrome = sizeHint().height();
+    for(const Text& text : texts)
+        chrome -= text.edit->maximumHeight();
 
     // all the text is shown. Only when it is taller than the view, each text has at least a line
-    // and the room is shared by how much each text lacks (those texts scroll)
+    // and the room is shared by how much each text lacks (the rest scrolls with the wheel and the cursor)
     auto distribute = [&](int available) {
         int used = 0, lack = 0;
         for(Text& text : texts) {
@@ -734,6 +733,15 @@ void CaptionOverlay::relayout()
     x = qMax(bounds.left(), qMin(x, bounds.right() + 1 - width));
     y = qMax(bounds.top(), qMin(y, bounds.bottom() + 1 - height));
     setGeometry(x, y, width, height);
+
+    // The invalidated layouts would place the children only with the posted LayoutRequest. When the images are
+    // turned fast, the editor was painted before it with the new size and the old texts (one squeezed line).
+    // So they are laid out now, the parents before their children
+    layout()->activate();
+    for(QWidget* child : findChildren<QWidget*>()) {
+        if(child->layout() && !child->isHidden())
+            child->layout()->activate();
+    }
 }
 
 QRect CaptionOverlay::viewArea() const

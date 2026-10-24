@@ -20,7 +20,7 @@ class QVBoxLayout;
  * moved and named (the comment of its separator line).
  * It looks and moves like PromptOverlay, and is put at the bottom left by default (the prompt is at the bottom right).
  * Like the prompt, it is shown only for images that have a caption file. Its height fits the whole text,
- * and the texts scroll only when they are taller than the view
+ * with no scroll bars; only text taller than the view is cut, and scrolls with the wheel and the cursor
  * Ctrl+S saves the caption, and the changes are also saved when the image changes or the editor is hidden
  */
 class CaptionOverlay : public QFrame
