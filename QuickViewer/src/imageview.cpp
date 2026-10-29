@@ -43,6 +43,14 @@ ImageView::ImageView(QWidget *parent)
     if(qApp->Effect() > qvEnums::UsingFixedShader)
         setRenderer(OpenGL);
 #endif
+    // made after the viewport, so they are over the images, and before the overlays of MainWindow, which are over them
+    for(QLabel*& signage : m_signages) {
+        signage = new QLabel(this);
+        signage->setTextFormat(Qt::PlainText);
+        signage->setAttribute(Qt::WA_TransparentForMouseEvents);
+        signage->setStyleSheet("QLabel { color: #dddddd; background-color: rgba(0, 0, 0, 128); border: none; padding: 4px; }");
+        signage->hide();
+    }
 
     setMouseTracking(true);
     resetBackgroundColor();
@@ -162,6 +170,7 @@ void ImageView::on_clearImages_triggered()
     }
 
     m_pages.resize(0);
+    updateSignages();
     // horizontalScrollBar()->setValue(0);
     // verticalScrollBar()->setValue(0);
 }
@@ -204,8 +213,6 @@ void ImageView::readyForPaint() {
                             m_pageRotations.isEmpty() ? 0 : m_pageRotations[pageCount+i],
                             m_loupeEnable);
             }
-            m_pages[i].Text = qApp->ShowFullscreenSignage() && m_isFullScreen ? m_pageManager->pageSignage(i) : "";
-            m_pages[i].resetSignage(QRect(QPoint(), viewport()->size()), pageAlign);
             m_effectManager.prepare(dynamic_cast<QGraphicsPixmapItem*>(m_pages[i].GrItem), m_pages[i].Ic, drawRect.size());
             sceneRect = sceneRect.united(drawRect);
         }
@@ -215,11 +222,34 @@ void ImageView::readyForPaint() {
           || m_loupeEnable
           || m_lastScreenPixelRatio > 1.0, sceneRect);
     }
+    updateSignages();
     // QGraphicsView updates the cursor internally,
     // but QV cannot trap this event, so it forcibly clears the cursor.
     if(m_isFullScreen && qApp->HideMouseCursorInFullscreen())
         setCursor(Qt::BlankCursor);
     m_effectManager.prepareFinished();
+}
+
+void ImageView::updateSignages()
+{
+    bool visible = qApp->ShowFullscreenSignage() && m_isFullScreen && m_pageManager;
+    QRect area = viewport()->geometry();
+    for(int i = 0; i < 2; i++) {
+        QLabel* signage = m_signages[i];
+        QString text = visible && i < m_pages.size() ? m_pageManager->pageSignage(i) : QString();
+        if(text.isEmpty()) {
+            signage->hide();
+            continue;
+        }
+        // at the top right, and in dual view at the top left of the left page
+        bool right = m_pages.size() == 1 || (i == 1) != qApp->RightSideBook();
+        signage->ensurePolished();
+        // the padding and a gap between the pages
+        signage->setText(signage->fontMetrics().elidedText(text, Qt::ElideMiddle, area.width()/m_pages.size() - 16));
+        signage->adjustSize();
+        signage->move(right ? area.right()+1-signage->width() : area.left(), area.top());
+        signage->show();
+    }
 }
 
 static bool s_lastLoupeMode;
@@ -411,6 +441,8 @@ void ImageView::resizeEvent(QResizeEvent *event)
         scene()->setSceneRect(QRect(QPoint(), event->size()));
     }
     QGraphicsView::resizeEvent(event);
+    // also while resizing skips readyForPaint(), so that the text of the right page stays at the right edge
+    updateSignages();
     if (resizeCount == 0) {
         resizeCount++;
         qreal newRatio = screen()->devicePixelRatio();

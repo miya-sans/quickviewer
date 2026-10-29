@@ -387,7 +387,7 @@ QString QVApplication::getDefaultPictureFolderPath()
 }
 
 // Revision of the settings file. Files without it were saved with the original defaults of QuickViewer
-#define QV_SETTINGS_REVISION 6
+#define QV_SETTINGS_REVISION 7
 
 void QVApplication::migrateSettings()
 {
@@ -467,6 +467,10 @@ void QVApplication::migrateSettings()
         QString fitting = QKeySequence(m_settings->value("KeyConfig/actionFitting").toString()).toString(QKeySequence::PortableText);
         if(!fitting.split(", ").contains("F"))
             migrateKey("actionFitToWindow", "", "F");
+    }
+    if(revision < 7) {
+        // the file name and page number are shown in fullscreen again, as in the user's original settings
+        migrateValue("View/ShowFullscreenSignage", {"false"}, "true");
     }
 
     m_settings->setValue("Others/SettingsRevision", QV_SETTINGS_REVISION);
@@ -621,7 +625,7 @@ void QVApplication::loadSettings()
     m_backgroundColor2 = QColor(m_settings->value("BackgroundColor2", "0x5e5e5e").toString().toUInt(nullptr, 16));
     m_useCheckeredPattern  = m_settings->value("UseCheckeredPattern", false).toBool();
     m_dontEnlargeSmallImagesOnFitting  = m_settings->value("DontEnlargeSmallImagesOnFitting", false).toBool();
-    m_showFullscreenSignage  = m_settings->value("ShowFullscreenSignage", false).toBool();
+    m_showFullscreenSignage  = m_settings->value("ShowFullscreenSignage", true).toBool();
     m_dontShrinkForLargeImage  = m_settings->value("DontShrinkForLargeImage", false).toBool();
 //    m_showFullscreenTitleBar = m_settings->value("ShowFullscreenTitleBar", true).toBool();
     m_useDirect2D = m_settings->value("UseDirect2D", false).toBool();
