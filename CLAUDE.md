@@ -38,9 +38,10 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
 
      The listing itself takes about 25 ms on its thread. Images decoded during the fast run: 573 before, 243 after.
 2. **Free panning** (drag the image with the left button, like PureRef).
-   - A left drag (past `QApplication::startDragDistance()`) moves the images anywhere, also beyond the edges of the view, fitted or zoomed. 48 px (`FREE_PAN_MARGIN`) stay in the view so they cannot be lost. The cursor is a closed hand while dragging.
-   - While the images are free, the mouse no longer pans them (`scrollOnZoomMode` is skipped) and zooming keeps them where they are: the wheel keeps the point under the cursor, the keys keep the point at the center of the view.
-   - Double-clicking (the zoom is kept), another image (or the other half of a wide image), F, M and Fit to width put them back (`leaveFreePan`): the next layout places them like before the drag. The left and right edges (`HOVER_BORDER`) still turn pages on a click and never start a drag. A press with the loupe tool also leaves free panning.
+   - A left drag (past `QApplication::startDragDistance()`) moves the images anywhere, also beyond the edges of the view, fitted or zoomed. 48 px (`FREE_PAN_MARGIN`) stay in the view so they cannot be lost (the user is fine with that margin). The cursor is a closed hand while dragging.
+   - While the images are free, the mouse no longer pans them (`scrollOnZoomMode` is skipped) and zooming keeps them where they are: the wheel keeps the point under the cursor, the keys keep the point at the center of the view (the user is fine with the keys zooming around the center).
+   - Turning to another image keeps the drag position (the user asked for this): `m_freeOffset` stays, so the center of the next image lands at the same place (clamped to the margin for its size).
+   - Double-clicking (the zoom is kept), F, M and Fit to width put them back (`leaveFreePan`): the next layout places them like before the drag. The left and right edges (`HOVER_BORDER`) still turn pages on a click and never start a drag. A press with the loupe tool also leaves free panning.
    - State: `m_freeOffset` is the center of the images minus the center of the viewport, in viewport pixels. `applyFreePan()` turns the scroll bars off, makes the scene rect the images plus one view on each side, and sets the scroll values, which are absolute view coordinates (so they survive scene rect changes). It runs on every drag move and from `setSceneRectMode` on every layout.
    - The press is not accepted, so `MainWindow::eventFilter` still gets it for the mouse actions. QGraphicsView's `ScrollHandDrag` is no longer used: with "Scroll with cursor when zooming" off, the left drag is this free drag too, and the arrow keys that scroll in that mode go through `ImageView::scrollBy`.
 3. **Fullscreen text** (View › Show texts on Fullscreen, on by default): in F11 fullscreen the path and page number, `C:\folder\image.png (64/89)` (`PageManager::pageSignage`), are shown at the top right; in dual view each page has its own at its outer top corner. Light grey `#dddddd` on half-transparent black, chosen by the user for the black bars beside vertical images (the original was green).
@@ -202,6 +203,5 @@ This is a personal fork of QuickViewer (Qt 6, C++, qmake) maintained for one Win
 ## Ideas not done yet
 
 - Translations (`QuickViewer/translations/*.ts`) do not have the new strings: Copy to Folder, the notifications, the folder dialog, the prompt overlay and the caption editor.
-- Free panning keeps 48 px of the image in the view; PureRef has no such limit. Ask the user if they want it smaller or gone.
 - When fitting is turned off with M, the view zooms one 1.25 step from the fitted scale. A toggle to 100% may be preferred; ask the user.
 - Images arriving by a Windows copy were tested only on Linux. The retry of new images that can't be decoded follows how Windows copies (the file is locked during the copy and gets its time at the end). If a half image stays on screen after a copy on Windows, look at `FRESH_IMAGE_RETRIES` and the stamps in `scanFolder`.

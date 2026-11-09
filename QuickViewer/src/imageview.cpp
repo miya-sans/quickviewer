@@ -180,9 +180,7 @@ void ImageView::readyForPaint() {
     if(qApp->Effect() > qvEnums::UsingFixedShader)
         setRenderer(OpenGL);
     if(!m_pages.empty()) {
-        // another image (or the other half of a wide image) puts back the images dragged freely
-        if(m_freePan && freePanKey() != m_freePanKey)
-            leaveFreePan();
+        // another image stays where the images were dragged: m_freeOffset is kept (setSceneRectMode)
         QRect sceneRect;
         qvEnums::FitMode fitMode = qApp->Fitting() ? qApp->ImageFitMode() : qvEnums::NoFitting;
         for(int i = 0; i < m_pages.size(); i++) {
@@ -413,14 +411,6 @@ QRectF ImageView::pagesRect() const
 // This much of the images (in viewport pixels) stays in the view, so that they cannot be lost
 #define FREE_PAN_MARGIN 48
 
-QString ImageView::freePanKey() const
-{
-    QString key;
-    for(const PageContent& page : m_pages)
-        key += QString("%1|%2\n").arg(page.Ic.Path).arg(int(page.Separation));
-    return key;
-}
-
 void ImageView::startDragPending(QMouseEvent *event)
 {
     // not on the left and right edges, where a click turns the page (MainWindow::eventFilter)
@@ -441,7 +431,6 @@ bool ImageView::enterFreePan()
     // it starts where the images are now, so that they do not jump
     m_freeOffset = viewportTransform().mapRect(pages).center() - viewportCenter();
     m_freePan = true;
-    m_freePanKey = freePanKey();
     m_afterFreePan = false;
     applyFreePan();
     return true;

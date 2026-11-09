@@ -69,7 +69,7 @@ public:
     /**
      * @brief isFreePan the images were dragged with the left button (like PureRef): they are placed freely,
      * also beyond the edges of the view, the mouse no longer pans them, and zooming keeps them where they are.
-     * Double-clicking, another image, F (Fit to window) and M (Fitting) put them back
+     * They stay there for the next images; double-clicking, F (Fit to window) and M (Fitting) put them back
      */
     bool isFreePan() const { return m_freePan; }
     /**
@@ -187,10 +187,6 @@ private:
      */
     void applyFreePan();
     /**
-     * @brief freePanKey identifies the images shown (paths and halves of wide images): another image leaves free panning
-     */
-    QString freePanKey() const;
-    /**
      * @brief updateSignages shows the path and the page number of each page at the top of the view on fullscreen
      * ('Show texts on Fullscreen')
      */
@@ -260,7 +256,6 @@ private:
     QPointF m_freeOffset;
     QPointF m_dragStartOffset;
     QPointF m_dragStartPos;
-    QString m_freePanKey;
 };
 
 
