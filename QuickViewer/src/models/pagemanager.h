@@ -8,6 +8,36 @@
 class VolumeManager;
 class ImageView;
 
+typedef QHash<QString, QPair<qint64, qint64>> FileStamps;
+
+/**
+ * @brief FolderScan lists the images of the watched folder on a worker thread, and compares them with the current volume there.
+ * Image names are like FileLoaderDirectory::contents(): relative paths with native separators in subfolders
+ */
+struct FolderScan
+{
+    // input
+    QString volume;
+    // the folder of the images of the current volume, empty if no images are shown
+    QString realPath;
+    bool subfolders = false;
+    // the images of the current volume (the loader's list, so that a change is found by its address)
+    QStringList known;
+    FileStamps knownStamps;
+
+    // output
+    bool exists = false;
+    QStringList images;
+    // size and modification time (msecs) of each image, to find files still being written
+    FileStamps stamps;
+    QStringList added;
+    QSet<QString> removed;
+    // images whose size or time changed since the previous scan
+    QStringList changed;
+    // new empty files (being created), to be listed again
+    bool pendingFiles = false;
+};
+
 class PageManagerProtocol
 {
 public:
@@ -109,6 +139,7 @@ public:
         m_volumes.clear();
         m_watchedVolume.clear();
         m_watchTimer.stop();
+        m_scanPending = false;
         setWatchedDirectories(QStringList());
     }
     QStringList enumVolumes(QDir dir);
@@ -151,6 +182,13 @@ private:
     VolumeManager* addVolumeCache(QString path, bool onlyCover, bool immediate);
     VolumeManager* createVolume(QString path, bool onlyCover);
     void setWatchedDirectories(const QStringList& dirs);
+    void onFolderScanned(const FolderScan& scan);
+    /**
+     * @brief applyFolderChanges updates the current volume with the images of the folder now.
+     * The cached images and the displayed pages are kept when possible
+     * @param invalid images to be read again (their files changed)
+     */
+    void applyFolderChanges(const FolderScan& scan, const QStringList& invalid);
     void onVolumeBuiltWithFile(VolumeManager* newer, QString pathbase, QString qpath, int generation);
     /**
      * @brief younger page number
@@ -173,6 +211,13 @@ private:
     QFileSystemWatcher m_watcher;
     QTimer m_watchTimer;
     QString m_watchedVolume;
+    // the folder is listed on its own thread, not to block the page turns
+    QThreadPool m_scanPool;
+    bool m_scanRunning;
+    bool m_scanPending;
+    FileStamps m_scanStamps;
+    // images added recently, and how many times more they may be read again if they could not be decoded
+    QHash<QString, int> m_freshImages;
 
 //    VolumeManagerBuilder m_builderForAssoc;
 };

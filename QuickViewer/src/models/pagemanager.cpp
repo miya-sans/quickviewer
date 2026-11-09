@@ -17,9 +17,12 @@ PageManager::PageManager(QObject* parent)
     , m_fileVolume(nullptr)
     , m_imaveView(nullptr)
     , m_loadGeneration(0)
+    , m_scanRunning(false)
+    , m_scanPending(false)
 //    , m_builderForAssoc("", this)
 {
     installEventFilter(this);
+    m_scanPool.setMaxThreadCount(1);
     m_watchTimer.setSingleShot(true);
     m_watchTimer.setInterval(WATCH_RELOAD_DELAY);
     connect(&m_watcher, SIGNAL(directoryChanged(QString)), this, SLOT(onWatcher_directoryChanged(QString)));
@@ -299,14 +302,63 @@ QString PageManager::copyCurrentPagesTo(const QString &folder, QStringList &copi
     return QString();
 }
 
-static QStringList listImagesInFolder(const QString& path)
+// the files added or changed recently that could not be decoded are read again during this many scans
+#define FRESH_IMAGE_RETRIES 10
+
+/**
+ * @brief scanFolder lists the images of the folder and compares them with the current volume (on a worker thread)
+ */
+static void scanFolder(FolderScan& scan)
 {
-    QScopedPointer<IFileLoader> loader(qApp->ShowSubfolders()
-        ? static_cast<IFileLoader*>(new FileLoaderSubDirectory(nullptr, path))
-        : static_cast<IFileLoader*>(new FileLoaderDirectory(nullptr, path)));
-    QStringList images = loader->contents();
-    images.sort();
-    return images;
+    scan.exists = QDir(scan.volume).exists();
+    if(!scan.exists)
+        return;
+    if(scan.realPath.isEmpty()) {
+        // no images were shown: look for them like when opening the folder
+        QScopedPointer<IFileLoader> loader(scan.subfolders
+            ? static_cast<IFileLoader*>(new FileLoaderSubDirectory(nullptr, scan.volume))
+            : static_cast<IFileLoader*>(new FileLoaderDirectory(nullptr, scan.volume)));
+        scan.images = loader->contents();
+        return;
+    }
+    // the size and time come with the listing on Windows
+    QDir root(scan.realPath);
+    QDirIterator it(scan.realPath, QDir::Files,
+                    scan.subfolders ? QDirIterator::Subdirectories | QDirIterator::FollowSymlinks : QDirIterator::NoIteratorFlags);
+    while(it.hasNext()) {
+        QFileInfo info = it.nextFileInfo();
+        if(!IFileLoader::isImageFile(info.fileName()))
+            continue;
+        QString name = scan.subfolders ? QDir::toNativeSeparators(root.relativeFilePath(info.filePath())) : info.fileName();
+        QPair<qint64, qint64> stamp(info.size(), info.lastModified().toMSecsSinceEpoch());
+        scan.stamps.insert(name, stamp);
+        auto known = scan.knownStamps.constFind(name);
+        if(stamp.first == 0) {
+            // the file is being created, the images that can't be read yet are not shown
+            if(known == scan.knownStamps.cend())
+                scan.pendingFiles = true;
+            continue;
+        }
+        scan.images << name;
+        if(known != scan.knownStamps.cend() && known.value() != stamp)
+            scan.changed << name;
+    }
+    IFileLoader::sortFiles(scan.images);
+
+    const QSet<QString> knownSet(scan.known.cbegin(), scan.known.cend());
+    foreach(const QString& name, scan.images) {
+        if(!knownSet.contains(name))
+            scan.added << name;
+    }
+    if(scan.known.size() + scan.added.size() != scan.images.size()) {
+        const QSet<QString> imageSet(scan.images.cbegin(), scan.images.cend());
+        foreach(const QString& name, scan.known) {
+            if(!imageSet.contains(name))
+                scan.removed.insert(name);
+        }
+    }
+    // only the images that stay are read again
+    scan.changed.removeIf([&knownSet](const QString& name) { return !knownSet.contains(name); });
 }
 
 void PageManager::updateWatcher()
@@ -317,12 +369,20 @@ void PageManager::updateWatcher()
         return;
     }
     m_watchTimer.stop();
+    m_scanPending = false;
     if(!m_fileVolume || m_fileVolume->isArchive()) {
         m_watchedVolume.clear();
+        m_scanStamps.clear();
+        m_freshImages.clear();
         setWatchedDirectories(QStringList());
         return;
     }
-    m_watchedVolume = QDir::fromNativeSeparators(m_fileVolume->volumePath());
+    QString volume = QDir::fromNativeSeparators(m_fileVolume->volumePath());
+    if(volume != m_watchedVolume) {
+        m_scanStamps.clear();
+        m_freshImages.clear();
+    }
+    m_watchedVolume = volume;
     QStringList dirs = {m_watchedVolume};
     QString realpath = QDir::fromNativeSeparators(m_fileVolume->realVolumePath());
     if(realpath != m_watchedVolume)
@@ -350,15 +410,44 @@ void PageManager::setWatchedDirectories(const QStringList& dirs)
 
 void PageManager::onWatcher_directoryChanged(const QString& )
 {
-    // Changes are often notified many times in a row, so reload only once after a while
-    m_watchTimer.start();
+    // Changes are notified many times in a row (several times per file on Windows), so the folder is listed once after a while.
+    // The timer is not restarted, so that new images also appear while files keep coming
+    if(!m_watchTimer.isActive())
+        m_watchTimer.start();
 }
 
 void PageManager::onWatchTimer_timeout()
 {
     if(m_watchedVolume.isEmpty())
         return;
-    if(!QDir(m_watchedVolume).exists()) {
+    if(m_scanRunning) {
+        // listed again when the current listing has finished
+        m_scanPending = true;
+        return;
+    }
+    m_scanRunning = true;
+    m_scanPending = false;
+    FolderScan scan;
+    scan.volume = m_watchedVolume;
+    scan.subfolders = qApp->ShowSubfolders();
+    if(m_fileVolume && !m_fileVolume->isArchive() && QDir::fromNativeSeparators(m_fileVolume->volumePath()) == scan.volume) {
+        scan.realPath = QDir::fromNativeSeparators(m_fileVolume->realVolumePath());
+        scan.known = m_fileVolume->FileLoader()->contents();
+        scan.knownStamps = m_scanStamps;
+    }
+    m_scanPool.start([this, scan]() mutable {
+        scanFolder(scan);
+        QMetaObject::invokeMethod(this, [this, scan] { onFolderScanned(scan); }, Qt::QueuedConnection);
+    });
+}
+
+void PageManager::onFolderScanned(const FolderScan& scan)
+{
+    m_scanRunning = false;
+    bool again = false;
+    if(scan.volume != m_watchedVolume) {
+        // another folder is shown now
+    } else if(!scan.exists) {
         // the folder itself was removed or renamed
         if(m_fileVolume && QDir::fromNativeSeparators(m_fileVolume->volumePath()) == m_watchedVolume) {
             reloadVolume();
@@ -366,25 +455,97 @@ void PageManager::onWatchTimer_timeout()
             m_watchedVolume.clear();
             setWatchedDirectories(QStringList());
         }
-        return;
-    }
-    QStringList images = listImagesInFolder(m_watchedVolume);
-    if(!m_fileVolume) {
+    } else if(!m_fileVolume) {
         // the folder was emptied before, and images have been added again
-        if(!images.isEmpty())
+        if(!scan.images.isEmpty())
             loadVolume(m_watchedVolume);
+    } else if(m_fileVolume->isArchive() || QDir::fromNativeSeparators(m_fileVolume->volumePath()) != m_watchedVolume
+              || scan.realPath.isEmpty() || scan.known.constData() != m_fileVolume->FileLoader()->contents().constData()) {
+        // the volume was loaded again while listing
+        again = true;
+    } else {
+        m_scanStamps = scan.stamps;
+        QStringList invalid = scan.changed;
+        foreach(const QString& name, scan.changed)
+            m_freshImages.insert(name, FRESH_IMAGE_RETRIES);
+        // the new images that could not be decoded (e.g. still locked by the copy) are read again, during a few scans
+        QStringList retries;
+        for(auto it = m_freshImages.begin(); it != m_freshImages.end();) {
+            if(--it.value() < 0 || scan.removed.contains(it.key())) {
+                it = m_freshImages.erase(it);
+            } else {
+                if(!scan.changed.contains(it.key()))
+                    retries << it.key();
+                ++it;
+            }
+        }
+        invalid << m_fileVolume->dropFailedImages(retries);
+        foreach(const QString& name, scan.added)
+            m_freshImages.insert(name, FRESH_IMAGE_RETRIES);
+
+        if(scan.images.isEmpty()) {
+            // no images are left: shows nothing and waits for new images
+            reloadVolume();
+        } else if(!scan.added.isEmpty() || !scan.removed.isEmpty() || !invalid.isEmpty()) {
+            applyFolderChanges(scan, invalid);
+            // files may still be written, without notifications of the folder
+            again = true;
+        } else if(m_fileVolume->hasSubDirectories()) {
+            // subfolders may have been added or removed
+            updateWatcher();
+        }
+        again = again || scan.pendingFiles;
+    }
+    if(again && !m_watchedVolume.isEmpty())
+        m_scanPending = true;
+    if(m_scanPending && !m_watchTimer.isActive())
+        m_watchTimer.start();
+}
+
+void PageManager::applyFolderChanges(const FolderScan& scan, const QStringList& invalid)
+{
+    QStringList shown;
+    for(int i = 0; i < m_pages.size(); i++)
+        shown << m_fileVolume->getIndexedFileName(m_currentPage+i);
+    // in dual view, a new image may be paired with the first one
+    const QString oldNext = m_fileVolume->getIndexedFileName(m_currentPage+1);
+    // Keep the displayed image if it still exists, otherwise select the nearest remaining one
+    QString anchor;
+    for(int i = m_currentPage; i < m_fileVolume->size() && anchor.isEmpty(); i++) {
+        QString name = m_fileVolume->getIndexedFileName(i);
+        if(!scan.removed.contains(name))
+            anchor = name;
+    }
+    for(int i = m_currentPage-1; i >= 0 && anchor.isEmpty(); i--) {
+        QString name = m_fileVolume->getIndexedFileName(i);
+        if(!scan.removed.contains(name))
+            anchor = name;
+    }
+
+    if(!m_fileVolume->updateFileList(scan.images, scan.added, scan.removed, invalid))
+        return;
+
+    int idx = anchor.isEmpty() ? -1 : m_fileVolume->indexOfFileName(anchor);
+    if(idx < 0)
+        idx = qBound(0, m_currentPage, m_fileVolume->size()-1);
+
+    bool reload = shown.isEmpty() || m_fileVolume->getIndexedFileName(idx) != shown[0];
+    foreach(const QString& name, shown) {
+        if(invalid.contains(name))
+            reload = true;
+    }
+    if(qApp->DualView() && m_fileVolume->getIndexedFileName(idx+1) != oldNext)
+        reload = true;
+    if(reload) {
+        selectPage(idx);
         return;
     }
-    if(m_fileVolume->isArchive() || QDir::fromNativeSeparators(m_fileVolume->volumePath()) != m_watchedVolume)
-        return;
-    QStringList currents = m_fileVolume->FileLoader()->contents();
-    currents.sort();
-    if(images == currents) {
-        // subfolders may have been added or removed
-        updateWatcher();
-        return;
-    }
-    reloadVolume();
+    // the same images stay on the screen: only the page number changes, and the new neighbors are read ahead.
+    // The counter of the volume stays on the last displayed page
+    m_currentPage = idx;
+    if(m_fileVolume->cacheMode() != VolumeManager::CoverOnly)
+        m_fileVolume->on_ready();
+    emit pageChanged();
 }
 
 VolumeManager* PageManager::addVolumeCache(QString path, bool onlyCover, bool immediate)

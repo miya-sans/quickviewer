@@ -135,7 +135,7 @@ void ImageView::resetBackgroundColor()
 
 void ImageView::on_volumeChanged_triggered(QString )
 {
-    m_pageRotations = QVector<int>(m_pageManager->size());
+    m_pageRotations.clear();
 }
 
 bool ImageView::on_addImage_triggered(ImageContent ic, bool pageNext)
@@ -183,7 +183,6 @@ void ImageView::readyForPaint() {
         // another image (or the other half of a wide image) puts back the images dragged freely
         if(m_freePan && freePanKey() != m_freePanKey)
             leaveFreePan();
-        int pageCount = m_pageManager->currentPage();
         QRect sceneRect;
         qvEnums::FitMode fitMode = qApp->Fitting() ? qApp->ImageFitMode() : qvEnums::NoFitting;
         for(int i = 0; i < m_pages.size(); i++) {
@@ -209,11 +208,11 @@ void ImageView::readyForPaint() {
             if(fitMode != qvEnums::NoFitting) {
                 drawRect = m_pages[i].setPageLayoutFitting(
                             pageRect, pageAlign, fitMode, scalefactor,
-                            m_pageRotations.isEmpty() ? 0 : m_pageRotations[pageCount+i]);
+                            m_pageRotations.value(m_pages[i].Ic.Path));
             } else {
                 drawRect = m_pages[i].setPageLayoutManual(
                             pageRect, pageAlign, getZoomScale() / m_pages[i].sourceRatio() * scalefactor,
-                            m_pageRotations.isEmpty() ? 0 : m_pageRotations[pageCount+i],
+                            m_pageRotations.value(m_pages[i].Ic.Path),
                             m_loupeEnable);
             }
             m_effectManager.prepare(dynamic_cast<QGraphicsPixmapItem*>(m_pages[i].GrItem), m_pages[i].Ic, drawRect.size());
@@ -690,9 +689,9 @@ void ImageView::on_prevOnlyOnePage_triggered()
 
 void ImageView::on_rotatePage_triggered()
 {
-    if(!m_pageManager || m_pageRotations.empty())
+    if(!m_pageManager || m_pages.isEmpty())
         return;
-    m_pageRotations[m_pageManager->currentPage()] += 90;
+    m_pageRotations[m_pages[0].Ic.Path] += 90;
     readyForPaint();
 }
 
