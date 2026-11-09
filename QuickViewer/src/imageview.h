@@ -190,6 +190,11 @@ private:
      * @brief freePanKey identifies the images shown (paths and halves of wide images): another image leaves free panning
      */
     QString freePanKey() const;
+    /**
+     * @brief updateSignages shows the path and the page number of each page at the top of the view on fullscreen
+     * ('Show texts on Fullscreen')
+     */
+    void updateSignages();
 
     RendererType m_renderer;
     QVector<PageContent> m_pages;
@@ -205,6 +210,11 @@ private:
     QPoint m_zoomAnchor;
     QFont m_font;
     QCursor m_loupeCursor;
+    /**
+     * @brief m_signages the texts of updateSignages() for the first and the second page.
+     * They are widgets over the viewport, so zooming and scrolling the images do not move them
+     */
+    QLabel* m_signages[2];
 
     PageManager* m_pageManager;
     ShaderManager m_effectManager;

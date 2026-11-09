@@ -154,12 +154,6 @@ public:
      */
     int Rotate;
     /**
-     * @brief GText is information as a text on fullscreen
-     */
-    QString Text;
-    QGraphicsTextItem* GText;
-    QGraphicsRectItem* GTextSurface;
-    /**
      * @brief Actual drawing scale
      */
     qreal DrawScale;
@@ -189,7 +183,6 @@ public:
     void applyResize(qreal scale, int rotateOffset, QPoint pos, QSize newsize, bool loupe=false);
     QImage& applyRetouched();
     void initializePage(bool resetResized=false);
-    void resetSignage(QRect viewport, PageContent::PageAlign fitting);
     void resetScene(QGraphicsScene* scene);
     void checkInitialize();
     void dispose();
