@@ -28,8 +28,6 @@ PageContent::PageContent(QObject* parent)
     , Rotate(0)
     , m_resizeGeneratingState(0)
     , initialized(false)
-    , GText(nullptr)
-    , GTextSurface(nullptr)
     , Separation(NoSeparated)
     , m_imageView((ImageView*)parent)
 {
@@ -44,8 +42,6 @@ PageContent::PageContent(QObject* parent, QGraphicsScene *s, ImageContent ic)
     , Rotate(0)
     , m_resizeGeneratingState(0)
     , initialized(false)
-    , GText(nullptr)
-    , GTextSurface(nullptr)
     , Separation(Ic.wideImage() && qApp->SeparatePagesWhenWideImage() ? FirstSeparated : NoSeparated)
     , m_imageView((ImageView*)parent)
 {
@@ -79,8 +75,6 @@ PageContent::PageContent(const PageContent &rhs)
     , Rotate(rhs.Rotate)
     , m_resizeGeneratingState(0)
     , initialized(false)
-    , GText(rhs.GText)
-    , GTextSurface(rhs.GTextSurface)
     , DrawScale(rhs.DrawScale)
     , NotationalScale(rhs.NotationalScale)
     , Separation(rhs.Separation)
@@ -95,8 +89,6 @@ PageContent &PageContent::operator=(const PageContent &rhs) {
 //    ResizedPage = rhs.ResizedPage;
     GrItem = rhs.GrItem;
     Rotate = rhs.Rotate;
-    GText  = rhs.GText;
-    GTextSurface  = rhs.GTextSurface;
     m_resizeGeneratingState = 0;
     DrawScale = rhs.DrawScale;
     NotationalScale = rhs.NotationalScale;
@@ -343,45 +335,12 @@ void PageContent::initializePage(bool resetResized)
     m_resizeGeneratingState = 0;
 }
 
-void PageContent::resetSignage(QRect viewport, PageContent::PageAlign fitting)
-{
-    if(Text.isEmpty()) {
-        if(GText) {
-            Scene->removeItem(GText);
-            delete GText;
-            GText = nullptr;
-            Scene->removeItem(GTextSurface);
-            delete GTextSurface;
-            GTextSurface = nullptr;
-        }
-        return;
-    }
-    if(GText)
-        return;
-    GText = Scene->addText(Text);
-    GText->setPos(fitting == PageContent::PageRight ? viewport.right()-GText->boundingRect().width() : 0, 0);
-//qDebug() << GText->pos() << Text;
-    GText->setDefaultTextColor(Qt::green);
-    GText->setZValue(1);
-    QBrush brush(QColor::fromRgb(0, 0, 0, 0x80));
-    GTextSurface = Scene->addRect(GText->boundingRect(), Qt::PenStyle::NoPen, brush);
-    GTextSurface->setPos(GText->pos());
-}
-
 void PageContent::dispose()
 {
     if(GrItem) {
         Scene->removeItem(GrItem);
         delete GrItem;
         GrItem = nullptr;
-    }
-    if(GText) {
-        Scene->removeItem(GText);
-        delete GText;
-        GText = nullptr;
-        Scene->removeItem(GTextSurface);
-        delete GTextSurface;
-        GTextSurface = nullptr;
     }
 }
 

@@ -68,11 +68,17 @@ public:
         document()->setDocumentMargin(0);
         viewport()->setCursor(Qt::IBeamCursor);
     }
+    struct Heights {
+        int line;
+        int lines;
+        int all;
+    };
     /**
-     * @brief contentHeight height of the first lines of the text in the width (all of them when lines is 0).
-     * The lines are measured in the layout, because fallback fonts (e.g. Japanese) make them taller than the font
+     * @brief contentHeights heights of the text in the width: its first line, its first lines and all of it.
+     * The lines are measured in the layout, because fallback fonts (e.g. Japanese) make them taller than the font.
+     * One layout gives all of them: laying out a copy of the text three times was slow when the images are turned fast
      */
-    int contentHeight(int width, int lines = 0) const
+    Heights contentHeights(int width, int lines) const
     {
         QScopedPointer<QTextDocument> doc(document()->clone());
         doc->setDefaultFont(font());
@@ -80,18 +86,21 @@ public:
         doc->setDocumentMargin(0);
         doc->setTextWidth(width);
         // lays out the whole document
-        const int height = qCeil(doc->size().height());
+        const int all = qCeil(doc->size().height());
+        Heights heights{all, all, all};
         int count = 0;
-        for(QTextBlock block = doc->begin(); lines > 0 && block.isValid(); block = block.next()) {
+        for(QTextBlock block = doc->begin(); block.isValid() && count < lines; block = block.next()) {
             const QTextLayout* layout = block.layout();
-            for(int i = 0; i < layout->lineCount(); i++) {
-                if(++count == lines) {
-                    const QTextLine line = layout->lineAt(i);
-                    return qMin(height, qCeil(layout->position().y() + line.y() + line.height()));
-                }
+            for(int i = 0; i < layout->lineCount() && count < lines; i++) {
+                const QTextLine line = layout->lineAt(i);
+                const int bottom = qMin(all, qCeil(layout->position().y() + line.y() + line.height()));
+                if(++count == 1)
+                    heights.line = bottom;
+                if(count == lines)
+                    heights.lines = bottom;
             }
         }
-        return height;
+        return heights;
     }
 
 protected:
@@ -123,15 +132,23 @@ protected:
 class PromptValueLabel : public QWidget
 {
 public:
-    PromptValueLabel(const QString& text, const QString& value, std::function<void()> clicked, QWidget* parent)
+    explicit PromptValueLabel(QWidget* parent)
         : QWidget(parent)
-        , m_text(text)
-        , m_clicked(clicked)
     {
         setAttribute(Qt::WA_Hover);
         setCursor(Qt::PointingHandCursor);
         setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    }
+    /**
+     * @brief set shows a value (the labels are reused for each image)
+     */
+    void set(const QString& text, const QString& value, std::function<void()> clicked)
+    {
+        m_text = text;
+        m_clicked = clicked;
         setToolTip(QString("%1\n%2").arg(value, QCoreApplication::translate("PromptOverlay", "Click to copy")));
+        updateGeometry();
+        update();
     }
     QSize sizeHint() const override { return QSize(fontMetrics().horizontalAdvance(m_text) + 8, ROW_HEIGHT); }
     QSize minimumSizeHint() const override { return QSize(16, ROW_HEIGHT); }
@@ -521,6 +538,8 @@ QWidget *PromptOverlay::createSection(QWidget *title, const QString &copyToolTip
     titleLayout->addWidget(copyButton);
 
     text = new PromptTextEdit(box);
+    // the texts always have fixed heights, set by relayout()
+    text->setFixedHeight(ROW_HEIGHT);
     QVBoxLayout* layout = new QVBoxLayout(box);
     layout->setContentsMargins(SECTION_MARGIN, 0, SECTION_MARGIN, SECTION_MARGIN);
     layout->setSpacing(0);
@@ -557,18 +576,25 @@ void PromptOverlay::fillPrompt(QTextEdit *edit, const QString &text, const Promp
 
 void PromptOverlay::rebuildParameters()
 {
-    while(QLayoutItem* item = m_parametersLayout->takeAt(0)) {
-        delete item->widget();
+    // the labels are reused: creating them for every image was slow when the images are turned fast
+    while(QLayoutItem* item = m_parametersLayout->takeAt(0))
         delete item;
-    }
-    auto add = [this](int row, int column, const QString& label, const QString& value, int columnSpan, bool size) {
-        QLabel* key = new QLabel(label, m_parameters);
-        key->setObjectName("promptLabel");
-        if(column > 0)
-            key->setContentsMargins(8, 0, 0, 0);
+    int used = 0;
+    auto add = [this, &used](int row, int column, const QString& label, const QString& value, int columnSpan, bool size) {
+        if(used == m_parameterKeys.size()) {
+            QLabel* key = new QLabel(m_parameters);
+            key->setObjectName("promptLabel");
+            m_parameterKeys << key;
+            m_parameterValues << new PromptValueLabel(m_parameters);
+        }
+        QLabel* key = m_parameterKeys[used];
+        PromptValueLabel* text = static_cast<PromptValueLabel*>(m_parameterValues[used]);
+        used++;
+        key->setText(label);
+        key->setContentsMargins(column > 0 ? 8 : 0, 0, 0, 0);
         const QString shown = size ? QString(value).replace('x', QChar(0x00d7)) : value;
         const QString message = tr("Copied %1: %2").arg(label, value.size() > 60 ? value.left(57) + "..." : value);
-        PromptValueLabel* text = new PromptValueLabel(shown, value, [this, value, message] { copyText(value, message); }, m_parameters);
+        text->set(shown, value, [this, value, message] { copyText(value, message); });
         m_parametersLayout->addWidget(key, row, column);
         m_parametersLayout->addWidget(text, row, column + 1, 1, columnSpan);
         // children added to a visible widget are shown later, and the layout would not count them yet
@@ -598,7 +624,11 @@ void PromptOverlay::rebuildParameters()
         if(column == 0)
             row++;
     }
-    const bool any = m_parametersLayout->count() > 0;
+    for(int i = used; i < m_parameterKeys.size(); i++) {
+        m_parameterKeys[i]->hide();
+        m_parameterValues[i]->hide();
+    }
+    const bool any = used > 0;
     m_parameters->setVisible(any);
     m_rule->setVisible(any);
 }
@@ -648,17 +678,16 @@ void PromptOverlay::relayout()
         if(box->isHidden() || edit->isHidden())
             return;
         PromptTextEdit* text = static_cast<PromptTextEdit*>(edit);
-        const int line = text->contentHeight(textWidth, 1);
-        texts << Text{text, line, text->contentHeight(textWidth, maxLines), qMax(line, text->contentHeight(textWidth)), 0};
+        const PromptTextEdit::Heights heights = text->contentHeights(textWidth, maxLines);
+        texts << Text{text, heights.line, heights.lines, qMax(heights.line, heights.all), 0};
     };
     addText(m_positiveBox, m_positiveText, PROMPT_LINES);
     addText(m_negativeBox, m_negativeText, NEGATIVE_LINES);
     addText(m_settingsBox, m_settingsText, SETTINGS_LINES);
 
-    // the height of everything but the texts.
-    // The layouts of the sections update their size hints later (LayoutRequest), so they are invalidated here
-    for(Text& text : texts)
-        text.edit->setFixedHeight(0);
+    // the height of everything but the texts, whose current fixed heights are in the size hint.
+    // The layouts of the sections update their size hints later (LayoutRequest), so they are invalidated here.
+    // (The texts are not shrunk to 0 for this: that resized and laid them out at once, which was slow)
     for(int i = 0; i < layout()->count(); i++) {
         QWidget* child = layout()->itemAt(i)->widget();
         if(!child)
@@ -668,7 +697,9 @@ void PromptOverlay::relayout()
         child->updateGeometry();
     }
     layout()->invalidate();
-    const int chrome = sizeHint().height();
+    int chrome = sizeHint().height();
+    for(const Text& text : texts)
+        chrome -= text.edit->maximumHeight();
     m_minimumHeight = chrome;
     for(const Text& text : texts)
         m_minimumHeight += qMin(text.preferred, text.line);
@@ -713,6 +744,14 @@ void PromptOverlay::relayout()
     x = qMax(bounds.left(), qMin(x, bounds.right() + 1 - width));
     y = qMax(bounds.top(), qMin(y, bounds.bottom() + 1 - height));
     setGeometry(x, y, width, height);
+
+    // The invalidated layouts would place the children only with the posted LayoutRequest, and the overlay could be
+    // painted before it with the new size and the old texts when the images are turned fast. So they are laid out now
+    layout()->activate();
+    for(QWidget* child : findChildren<QWidget*>()) {
+        if(child->layout() && !child->isHidden())
+            child->layout()->activate();
+    }
 }
 
 QRect PromptOverlay::viewArea() const

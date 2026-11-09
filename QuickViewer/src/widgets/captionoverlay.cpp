@@ -7,14 +7,10 @@
 #define OVERLAY_MARGIN 12
 #define OVERLAY_DEFAULT_WIDTH 600
 #define OVERLAY_MIN_WIDTH 240
-// the frame and the margin around the contents are the edges for resizing
+// the frame and the margin around the contents are the left and right edges for resizing
 #define OVERLAY_GRIP 5
-#define OVERLAY_CORNER_GRIP 14
 #define SECTION_MARGIN 6
 #define ROW_HEIGHT 20
-// the lines of each text when the editor fits the text (one caption, or each of several candidates)
-#define CAPTION_LINES 8
-#define CANDIDATE_LINES 5
 // an editor dropped this near the center stays centered
 #define CENTER_SNAP 24
 
@@ -33,12 +29,7 @@ static const char* OVERLAY_STYLESHEET =
     "#CaptionOverlay QToolButton:pressed { background-color: rgba(255, 255, 255, 80); }"
     "#CaptionOverlay QLineEdit { padding: 0px; margin: 0px; color: #8c8c8c; selection-background-color: #5c5c5c; selection-color: #ffffff; }"
     "#CaptionOverlay QLineEdit:focus { color: #dddddd; }"
-    "#CaptionOverlay QTextEdit { padding: 0px; margin: 0px; selection-background-color: #5c5c5c; selection-color: #ffffff; }"
-    "#CaptionOverlay QScrollBar:vertical { background: transparent; width: 6px; margin: 0px; }"
-    "#CaptionOverlay QScrollBar::handle:vertical { background-color: rgba(255, 255, 255, 60); min-height: 16px; }"
-    "#CaptionOverlay QScrollBar::handle:vertical:hover { background-color: rgba(255, 255, 255, 110); }"
-    "#CaptionOverlay QScrollBar::add-line:vertical, #CaptionOverlay QScrollBar::sub-line:vertical { height: 0px; }"
-    "#CaptionOverlay QScrollBar::add-page:vertical, #CaptionOverlay QScrollBar::sub-page:vertical { background: transparent; }";
+    "#CaptionOverlay QTextEdit { padding: 0px; margin: 0px; selection-background-color: #5c5c5c; selection-color: #ffffff; }";
 
 namespace {
 
@@ -66,18 +57,25 @@ public:
         setAcceptRichText(false);
         setFocusPolicy(Qt::ClickFocus);
         setFrameShape(QFrame::NoFrame);
+        // no scroll bars: the editor fits the text, and a text taller than the view scrolls with the wheel and the cursor
         setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
         document()->setDocumentMargin(0);
         viewport()->setCursor(Qt::IBeamCursor);
     }
+    struct Heights {
+        int line;
+        int lines;
+        int all;
+    };
     /**
-     * @brief contentHeight height of the first lines of the text in the width (all of them when lines is 0).
-     * The lines are measured in the layout, because fallback fonts (e.g. Japanese) make them taller than the font
+     * @brief contentHeights heights of the text in the width: its first line, its first lines and all of it.
+     * The lines are measured in the layout, because fallback fonts (e.g. Japanese) make them taller than the font.
+     * One layout gives all of them: laying out a copy of the text three times was slow when the images are turned fast
      */
-    int contentHeight(int width, int lines = 0) const
+    Heights contentHeights(int width, int lines) const
     {
         QScopedPointer<QTextDocument> doc(document()->clone());
         doc->setDefaultFont(font());
@@ -85,18 +83,21 @@ public:
         doc->setDocumentMargin(0);
         doc->setTextWidth(width);
         // lays out the whole document
-        const int height = qCeil(doc->size().height());
+        const int all = qCeil(doc->size().height());
+        Heights heights{all, all, all};
         int count = 0;
-        for(QTextBlock block = doc->begin(); lines > 0 && block.isValid(); block = block.next()) {
+        for(QTextBlock block = doc->begin(); block.isValid() && count < lines; block = block.next()) {
             const QTextLayout* layout = block.layout();
-            for(int i = 0; i < layout->lineCount(); i++) {
-                if(++count == lines) {
-                    const QTextLine line = layout->lineAt(i);
-                    return qMin(height, qCeil(layout->position().y() + line.y() + line.height()));
-                }
+            for(int i = 0; i < layout->lineCount() && count < lines; i++) {
+                const QTextLine line = layout->lineAt(i);
+                const int bottom = qMin(all, qCeil(layout->position().y() + line.y() + line.height()));
+                if(++count == 1)
+                    heights.line = bottom;
+                if(count == lines)
+                    heights.lines = bottom;
             }
         }
-        return height;
+        return heights;
     }
 
 protected:
@@ -169,7 +170,6 @@ CaptionOverlay::CaptionOverlay(QAbstractScrollArea *view)
     , m_customSize(qApp->CaptionOverlaySize())
     , m_alignment(Qt::Alignment(qApp->CaptionOverlayAlignment()))
     , m_offset(qApp->CaptionOverlayOffset())
-    , m_minimumHeight(0)
     , m_dragMode(NoDrag)
     , m_resizeEdges()
 {
@@ -366,18 +366,14 @@ void CaptionOverlay::mouseMoveEvent(QMouseEvent *event)
         move(rect.topLeft());
         return;
     }
+    // only the width is resized, the height always fits the text
     QRect rect = m_pressGeometry;
     const int minWidth = qMin(OVERLAY_MIN_WIDTH, bounds.width());
-    const int minHeight = qMin(m_minimumHeight, bounds.height());
     if(m_resizeEdges & Qt::LeftEdge)
         rect.setLeft(qMin(qMax(bounds.left(), rect.left() + delta.x()), rect.right() + 1 - minWidth));
     if(m_resizeEdges & Qt::RightEdge)
         rect.setRight(qMax(qMin(bounds.right(), rect.right() + delta.x()), rect.left() + minWidth - 1));
-    if(m_resizeEdges & Qt::TopEdge)
-        rect.setTop(qMin(qMax(bounds.top(), rect.top() + delta.y()), rect.bottom() + 1 - minHeight));
-    if(m_resizeEdges & Qt::BottomEdge)
-        rect.setBottom(qMax(qMin(bounds.bottom(), rect.bottom() + delta.y()), rect.top() + minHeight - 1));
-    m_customSize = rect.size();
+    m_customSize = QSize(rect.width(), -1);
     updateAnchor(rect, false);
     relayout();
 }
@@ -429,7 +425,9 @@ void CaptionOverlay::leaveEvent(QEvent *event)
 QToolButton *CaptionOverlay::createButton(const QString &icon, const QString &toolTip, std::function<void()> clicked)
 {
     QToolButton* button = new QToolButton(this);
-    button->setIcon(qApp->flatIcon(icon, ICON_COLOR));
+    if(!m_icons.contains(icon))
+        m_icons.insert(icon, qApp->flatIcon(icon, ICON_COLOR));
+    button->setIcon(m_icons.value(icon));
     button->setIconSize(QSize(12, 12));
     button->setFixedSize(ROW_HEIGHT, ROW_HEIGHT);
     button->setToolTip(toolTip);
@@ -478,6 +476,8 @@ CaptionOverlay::Candidate CaptionOverlay::createCandidate()
     }
 
     c.text = new CaptionTextEdit(c.box);
+    // the texts always have fixed heights, set by relayout()
+    c.text->setFixedHeight(ROW_HEIGHT);
     QVBoxLayout* layout = new QVBoxLayout(c.box);
     layout->setContentsMargins(SECTION_MARGIN, 0, SECTION_MARGIN, SECTION_MARGIN);
     layout->setSpacing(0);
@@ -504,13 +504,30 @@ int CaptionOverlay::indexOf(QWidget *box) const
     return -1;
 }
 
-void CaptionOverlay::addCandidate()
+void CaptionOverlay::appendCandidate()
 {
-    Candidate c = createCandidate();
+    Candidate c = m_spareCandidates.isEmpty() ? createCandidate() : m_spareCandidates.takeLast();
     m_candidates << c;
     m_boxesLayout->addWidget(c.box);
     // children added to a visible widget are shown later, and the layout would not count them yet
     c.box->show();
+}
+
+void CaptionOverlay::releaseCandidate(int index)
+{
+    Candidate c = m_candidates.takeAt(index);
+    m_boxesLayout->removeWidget(c.box);
+    c.box->hide();
+    QSignalBlocker textBlocker(c.text);
+    QSignalBlocker nameBlocker(c.name);
+    c.name->clear();
+    c.text->clear();
+    m_spareCandidates << c;
+}
+
+void CaptionOverlay::addCandidate()
+{
+    appendCandidate();
     updateState();
     relayout();
     focusText(m_candidates.size() - 1);
@@ -522,11 +539,7 @@ void CaptionOverlay::removeCandidate(QWidget *box)
     if(index < 0 || m_candidates.size() <= 1)
         return;
     const bool focused = hasEditFocus();
-    Candidate c = m_candidates.takeAt(index);
-    m_boxesLayout->removeWidget(c.box);
-    c.box->hide();
-    // the clicked button belongs to the box
-    c.box->deleteLater();
+    releaseCandidate(index);
     updateState();
     relayout();
     if(focused)
@@ -559,18 +572,10 @@ void CaptionOverlay::load()
     const bool focused = hasEditFocus();
     m_file.load(m_imagePath);
     const QList<CaptionCandidate>& candidates = m_file.candidates();
-    while(m_candidates.size() > candidates.size()) {
-        Candidate c = m_candidates.takeLast();
-        m_boxesLayout->removeWidget(c.box);
-        c.box->hide();
-        c.box->deleteLater();
-    }
-    while(m_candidates.size() < candidates.size()) {
-        Candidate c = createCandidate();
-        m_candidates << c;
-        m_boxesLayout->addWidget(c.box);
-        c.box->show();
-    }
+    while(m_candidates.size() > candidates.size())
+        releaseCandidate(m_candidates.size() - 1);
+    while(m_candidates.size() < candidates.size())
+        appendCandidate();
     for(int i = 0; i < candidates.size(); i++) {
         const Candidate& c = m_candidates[i];
         QSignalBlocker textBlocker(c.text);
@@ -580,8 +585,8 @@ void CaptionOverlay::load()
         c.text->setPlainText(candidates[i].text);
         c.text->moveCursor(QTextCursor::Start);
     }
+    // the callers lay it out with updateVisibility()
     updateState();
-    relayout();
     // the editing goes on with the next image
     if(focused && !hasEditFocus())
         focusText(0);
@@ -607,21 +612,21 @@ void CaptionOverlay::updateState()
     if(isModified())
         m_fileLabel->setText(QString("%1  %2").arg(name, QChar(0x2022)));
     else
-        m_fileLabel->setText(m_file.exists() ? name : tr("%1 (new)").arg(name));
+        m_fileLabel->setText(name);
     m_fileLabel->setToolTip(QDir::toNativeSeparators(m_file.path()));
 
     // the titles are needed for several candidates, or for the name of the first one
     const bool titles = m_candidates.size() > 1 || !m_candidates.first().name->text().isEmpty();
+    const bool mouseOver = underMouse();
     for(int i = 0; i < m_candidates.size(); i++) {
         const Candidate& c = m_candidates[i];
         c.titleRow->setVisible(titles);
         c.box->layout()->setContentsMargins(SECTION_MARGIN, titles ? 0 : 2, SECTION_MARGIN, SECTION_MARGIN);
         c.name->setPlaceholderText(tr("Caption %1").arg(i + 1));
-        c.text->setPlaceholderText(i == 0 && !m_file.exists()
-                                   ? tr("No caption file yet. Type a caption, Ctrl+S saves it")
-                                   : tr("Empty caption"));
+        c.text->setPlaceholderText(tr("Empty caption"));
         setStyleProperty(c.box, "first", i == 0);
-        updateButtons(c.box, c.box->isVisible() && c.box->rect().contains(c.box->mapFromGlobal(QCursor::pos())));
+        // (the cursor position is asked only under the mouse: it is slow on X11)
+        updateButtons(c.box, mouseOver && c.box->isVisible() && c.box->rect().contains(c.box->mapFromGlobal(QCursor::pos())));
     }
 }
 
@@ -640,7 +645,8 @@ void CaptionOverlay::updateButtons(QWidget *box, bool hovered)
 
 void CaptionOverlay::updateVisibility()
 {
-    if(m_enabled && !m_imagePath.isEmpty()) {
+    // only images with a caption file, like the prompt only for images with generation data
+    if(m_enabled && !m_imagePath.isEmpty() && m_file.imagePath() == m_imagePath && m_file.exists()) {
         relayout();
         show();
         raise();
@@ -674,29 +680,26 @@ void CaptionOverlay::relayout()
     if(bounds.width() < 40 || bounds.height() < 40)
         return;
     ensurePolished();
-    int width = m_customSize.isValid() ? m_customSize.width() : OVERLAY_DEFAULT_WIDTH;
+    int width = m_customSize.width() > 0 ? m_customSize.width() : OVERLAY_DEFAULT_WIDTH;
     width = qMin(qMax(width, OVERLAY_MIN_WIDTH), bounds.width());
     const int textWidth = qMax(40, width - 2 * (OVERLAY_GRIP + SECTION_MARGIN));
-    const int maxLines = m_candidates.size() > 1 ? CANDIDATE_LINES : CAPTION_LINES;
 
     struct Text {
         QTextEdit* edit;
         int line;
-        int fitted;
         int preferred;
         int height;
     };
     QList<Text> texts;
     for(const Candidate& c : m_candidates) {
         CaptionTextEdit* text = static_cast<CaptionTextEdit*>(c.text);
-        const int line = text->contentHeight(textWidth, 1);
-        texts << Text{text, line, text->contentHeight(textWidth, maxLines), qMax(line, text->contentHeight(textWidth)), 0};
+        const CaptionTextEdit::Heights heights = text->contentHeights(textWidth, 1);
+        texts << Text{text, heights.line, qMax(heights.line, heights.all), 0};
     }
 
-    // the height of everything but the texts.
-    // The nested layouts update their size hints later (LayoutRequest), so they are invalidated here
-    for(Text& text : texts)
-        text.edit->setFixedHeight(0);
+    // the height of everything but the texts, whose current fixed heights are in the size hint.
+    // The nested layouts update their size hints later (LayoutRequest), so they are invalidated here.
+    // (The texts are not shrunk to 0 for this: that resized them at once, and they were drawn so under load)
     for(QWidget* child : findChildren<QWidget*>()) {
         if(!child->layout())
             continue;
@@ -704,12 +707,12 @@ void CaptionOverlay::relayout()
         child->updateGeometry();
     }
     layout()->invalidate();
-    const int chrome = sizeHint().height();
-    m_minimumHeight = chrome;
+    int chrome = sizeHint().height();
     for(const Text& text : texts)
-        m_minimumHeight += qMin(text.preferred, text.line);
+        chrome -= text.edit->maximumHeight();
 
-    // at least a line of each text, then the room is shared by how much each text lacks
+    // all the text is shown. Only when it is taller than the view, each text has at least a line
+    // and the room is shared by how much each text lacks (the rest scrolls with the wheel and the cursor)
     auto distribute = [&](int available) {
         int used = 0, lack = 0;
         for(Text& text : texts) {
@@ -726,18 +729,13 @@ void CaptionOverlay::relayout()
         }
     };
     int height = chrome;
-    if(m_customSize.isValid()) {
-        height = qMin(qMax(m_customSize.height(), m_minimumHeight), bounds.height());
+    for(Text& text : texts) {
+        text.height = text.preferred;
+        height += text.height;
+    }
+    if(height > bounds.height()) {
+        height = bounds.height();
         distribute(height - chrome);
-    } else {
-        for(Text& text : texts) {
-            text.height = qMin(text.preferred, text.fitted);
-            height += text.height;
-        }
-        if(height > bounds.height()) {
-            height = bounds.height();
-            distribute(height - chrome);
-        }
     }
     for(const Text& text : texts)
         text.edit->setFixedHeight(text.height);
@@ -753,6 +751,15 @@ void CaptionOverlay::relayout()
     x = qMax(bounds.left(), qMin(x, bounds.right() + 1 - width));
     y = qMax(bounds.top(), qMin(y, bounds.bottom() + 1 - height));
     setGeometry(x, y, width, height);
+
+    // The invalidated layouts would place the children only with the posted LayoutRequest. When the images are
+    // turned fast, the editor was painted before it with the new size and the old texts (one squeezed line).
+    // So they are laid out now, the parents before their children
+    layout()->activate();
+    for(QWidget* child : findChildren<QWidget*>()) {
+        if(child->layout() && !child->isHidden())
+            child->layout()->activate();
+    }
 }
 
 QRect CaptionOverlay::viewArea() const
@@ -766,44 +773,17 @@ Qt::Edges CaptionOverlay::edgesAt(const QPoint &pos) const
     Qt::Edges edges;
     if(!rect().contains(pos))
         return edges;
+    // the height fits the text, so only the left and right edges resize
     if(pos.x() < OVERLAY_GRIP)
         edges |= Qt::LeftEdge;
     else if(pos.x() >= width() - OVERLAY_GRIP)
         edges |= Qt::RightEdge;
-    if(pos.y() < OVERLAY_GRIP)
-        edges |= Qt::TopEdge;
-    else if(pos.y() >= height() - OVERLAY_GRIP)
-        edges |= Qt::BottomEdge;
-    // the corners are easier to catch
-    if(edges & (Qt::LeftEdge | Qt::RightEdge)) {
-        if(pos.y() < OVERLAY_CORNER_GRIP)
-            edges |= Qt::TopEdge;
-        else if(pos.y() >= height() - OVERLAY_CORNER_GRIP)
-            edges |= Qt::BottomEdge;
-    }
-    if(edges & (Qt::TopEdge | Qt::BottomEdge)) {
-        if(pos.x() < OVERLAY_CORNER_GRIP)
-            edges |= Qt::LeftEdge;
-        else if(pos.x() >= width() - OVERLAY_CORNER_GRIP)
-            edges |= Qt::RightEdge;
-    }
     return edges;
 }
 
 void CaptionOverlay::updateEdgeCursor(Qt::Edges edges)
 {
-    const bool horizontal = edges & (Qt::LeftEdge | Qt::RightEdge);
-    const bool vertical = edges & (Qt::TopEdge | Qt::BottomEdge);
-    if(horizontal && vertical) {
-        const bool falling = (edges & Qt::LeftEdge) ? bool(edges & Qt::TopEdge) : bool(edges & Qt::BottomEdge);
-        setCursor(falling ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor);
-    } else if(horizontal) {
-        setCursor(Qt::SizeHorCursor);
-    } else if(vertical) {
-        setCursor(Qt::SizeVerCursor);
-    } else {
-        setCursor(Qt::ArrowCursor);
-    }
+    setCursor(edges & (Qt::LeftEdge | Qt::RightEdge) ? Qt::SizeHorCursor : Qt::ArrowCursor);
 }
 
 void CaptionOverlay::updateAnchor(const QRect &rect, bool snap)

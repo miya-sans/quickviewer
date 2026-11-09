@@ -53,8 +53,35 @@ jobs:
           Copy-Item README.md, LICENSE $dist
           Copy-Item QuickViewer\translations\*.qm, QuickViewer\translations\languages.ini "$dist\translations"
           Copy-Item QuickViewer\database\schema.sql, QuickViewer\database\thumbnail.sqlite3.db "$dist\database"
-          windeployqt --release --compiler-runtime "$dist\QuickViewer.exe"
+          # Only what the app uses: no OpenGL or Direct3D (the build defines QV_WITHOUT_OPENGL), no network plugins,
+          # no Qt translations (the UI is English; the app's own translations are copied above), only the SQLite driver
+          windeployqt --release --no-compiler-runtime --no-translations --no-opengl-sw `
+            --no-system-d3d-compiler --no-system-dxc-compiler `
+            --skip-plugin-types generic,networkinformation,tls `
+            --exclude-plugins qsqlmimer,qsqlodbc,qsqlpsql `
+            "$dist\QuickViewer.exe"
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          # The Visual C++ runtime DLLs next to the exe, instead of its 18 MB installer (vc_redist.x64.exe)
+          $crt = Get-ChildItem "$env:VCToolsRedistDir\x64" -Directory -Filter "Microsoft.VC*.CRT" | Select-Object -First 1
+          if (-not $crt) { Write-Error "No Visual C++ runtime in '$env:VCToolsRedistDir'"; exit 1 }
+          "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "vcruntime140.dll", "vcruntime140_1.dll" |
+            ForEach-Object { Copy-Item (Join-Path $crt.FullName $_) $dist }
+          # Every DLL that the package imports is in it or in Windows
+          $missing = foreach ($file in Get-ChildItem $dist -Recurse -Include *.exe, *.dll) {
+            foreach ($line in (dumpbin /nologo /dependents $file.FullName)) {
+              if ($line -match '^\s+(\S+\.dll)\s*$') {
+                $dll = $Matches[1]
+                if ($dll -notmatch '^(api|ext)-ms-' -and -not (Test-Path (Join-Path $dist $dll)) `
+                    -and -not (Test-Path (Join-Path "$env:SystemRoot\System32" $dll))) { "$($file.Name) needs $dll" }
+              }
+            }
+          }
+          if ($missing) { $missing; Write-Error "DLLs missing from the package"; exit 1 }
+          $root = (Resolve-Path $dist).Path
+          Get-ChildItem $dist -Recurse -File | Sort-Object Length -Descending |
+            Format-Table @{n = 'KB'; e = { [math]::Round($_.Length / 1KB) } }, @{n = 'File'; e = { $_.FullName.Substring($root.Length + 1) } } -AutoSize |
+            Out-String -Width 200
+          "Total: {0:N1} MB" -f ((Get-ChildItem $dist -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
 
       - name: Upload
         uses: actions/upload-artifact@v4

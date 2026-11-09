@@ -92,6 +92,9 @@ private:
     QWidget* m_rule;
     QWidget* m_parameters;
     QGridLayout* m_parametersLayout;
+    // the labels of the settings grid, reused for each image (the shown ones come first)
+    QList<QLabel*> m_parameterKeys;
+    QList<QWidget*> m_parameterValues;
     QWidget* m_settingsBox;
     QToolButton* m_settingsButton;
     QTextEdit* m_settingsText;

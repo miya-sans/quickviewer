@@ -43,6 +43,14 @@ ImageView::ImageView(QWidget *parent)
     if(qApp->Effect() > qvEnums::UsingFixedShader)
         setRenderer(OpenGL);
 #endif
+    // made after the viewport, so they are over the images, and before the overlays of MainWindow, which are over them
+    for(QLabel*& signage : m_signages) {
+        signage = new QLabel(this);
+        signage->setTextFormat(Qt::PlainText);
+        signage->setAttribute(Qt::WA_TransparentForMouseEvents);
+        signage->setStyleSheet("QLabel { color: #dddddd; background-color: rgba(0, 0, 0, 128); border: none; padding: 4px; }");
+        signage->hide();
+    }
 
     setMouseTracking(true);
     resetBackgroundColor();
@@ -162,6 +170,7 @@ void ImageView::on_clearImages_triggered()
     }
 
     m_pages.resize(0);
+    updateSignages();
     // horizontalScrollBar()->setValue(0);
     // verticalScrollBar()->setValue(0);
 }
@@ -171,6 +180,9 @@ void ImageView::readyForPaint() {
     if(qApp->Effect() > qvEnums::UsingFixedShader)
         setRenderer(OpenGL);
     if(!m_pages.empty()) {
+        // another image (or the other half of a wide image) puts back the images dragged freely
+        if(m_freePan && freePanKey() != m_freePanKey)
+            leaveFreePan();
         int pageCount = m_pageManager->currentPage();
         QRect sceneRect;
         qvEnums::FitMode fitMode = qApp->Fitting() ? qApp->ImageFitMode() : qvEnums::NoFitting;
@@ -204,8 +216,6 @@ void ImageView::readyForPaint() {
                             m_pageRotations.isEmpty() ? 0 : m_pageRotations[pageCount+i],
                             m_loupeEnable);
             }
-            m_pages[i].Text = qApp->ShowFullscreenSignage() && m_isFullScreen ? m_pageManager->pageSignage(i) : "";
-            m_pages[i].resetSignage(QRect(QPoint(), viewport()->size()), pageAlign);
             m_effectManager.prepare(dynamic_cast<QGraphicsPixmapItem*>(m_pages[i].GrItem), m_pages[i].Ic, drawRect.size());
             sceneRect = sceneRect.united(drawRect);
         }
@@ -215,11 +225,34 @@ void ImageView::readyForPaint() {
           || m_loupeEnable
           || m_lastScreenPixelRatio > 1.0, sceneRect);
     }
+    updateSignages();
     // QGraphicsView updates the cursor internally,
     // but QV cannot trap this event, so it forcibly clears the cursor.
     if(m_isFullScreen && qApp->HideMouseCursorInFullscreen())
         setCursor(Qt::BlankCursor);
     m_effectManager.prepareFinished();
+}
+
+void ImageView::updateSignages()
+{
+    bool visible = qApp->ShowFullscreenSignage() && m_isFullScreen && m_pageManager;
+    QRect area = viewport()->geometry();
+    for(int i = 0; i < 2; i++) {
+        QLabel* signage = m_signages[i];
+        QString text = visible && i < m_pages.size() ? m_pageManager->pageSignage(i) : QString();
+        if(text.isEmpty()) {
+            signage->hide();
+            continue;
+        }
+        // at the top right, and in dual view at the top left of the left page
+        bool right = m_pages.size() == 1 || (i == 1) != qApp->RightSideBook();
+        signage->ensurePolished();
+        // the padding and a gap between the pages
+        signage->setText(signage->fontMetrics().elidedText(text, Qt::ElideMiddle, area.width()/m_pages.size() - 16));
+        signage->adjustSize();
+        signage->move(right ? area.right()+1-signage->width() : area.left(), area.top());
+        signage->show();
+    }
 }
 
 static bool s_lastLoupeMode;
@@ -243,35 +276,43 @@ void ImageView::setSceneRectMode(bool scrolled, const QRect &sceneRect)
     // if Size of Image overs Size of View, use Image's size
     bool newMode = scrolled && (size().width() < sceneRect.width() || size().height() < sceneRect.height());
     QRectF oldrect = scene()->sceneRect();
-    QRectF newrect = newMode ? QRectF(QPoint(qMin(0, sceneRect.left()), 0), QSize(qMax(size().width(), sceneRect.width()), qMax(size().height(), sceneRect.height())))
-                             : QRectF(QPoint(), size());
-    scene()->setSceneRect(newrect);
-    if(newMode) {
-        if(m_loupeEnable) {
-            m_loupeBasePos = mapFromGlobal(QCursor::pos());
-            setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-            setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-            setDragMode(QGraphicsView::NoDrag);
-            scrollOnLoupeMode();
-        } else if(qApp->ScrollWithCursorWhenZooming()) {
-            setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-            setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-            setDragMode(QGraphicsView::NoDrag);
-            scrollOnZoomMode();
-        } else {
-            // Since Qt :: ScrollBarAsNeeded does not work correctly, judge the display state on its own and switch.
-            bool willBeHide = m_isFullScreen && qApp->HideScrollBarInFullscreen();
-            setHorizontalScrollBarPolicy(!willBeHide && size().width() < sceneRect.width()+verticalScrollBar()->width() ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff );
-            setVerticalScrollBarPolicy(!willBeHide && size().height() < sceneRect.height()+horizontalScrollBar()->height() ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff );
-            setDragMode(QGraphicsView::ScrollHandDrag);
-            if(afterLoupe) {
-                horizontalScrollBar()->setValue(m_scrollBaseValues.x());
-                verticalScrollBar()->setValue(m_scrollBaseValues.y());
-            }
-        }
+    // the images dragged with the mouse stay where they were put
+    bool freePan = m_freePan && !m_loupeEnable;
+    if(freePan) {
+        applyFreePan();
     } else {
-        setDragMode(QGraphicsView::NoDrag);
+        QRectF rect = newMode ? QRectF(QPoint(qMin(0, sceneRect.left()), 0), QSize(qMax(size().width(), sceneRect.width()), qMax(size().height(), sceneRect.height())))
+                              : QRectF(QPoint(), size());
+        scene()->setSceneRect(rect);
+        if(newMode) {
+            if(m_loupeEnable) {
+                m_loupeBasePos = mapFromGlobal(QCursor::pos());
+                setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                setDragMode(QGraphicsView::NoDrag);
+                scrollOnLoupeMode();
+            } else if(qApp->ScrollWithCursorWhenZooming()) {
+                setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                setDragMode(QGraphicsView::NoDrag);
+                scrollOnZoomMode();
+            } else {
+                // Since Qt :: ScrollBarAsNeeded does not work correctly, judge the display state on its own and switch.
+                bool willBeHide = m_isFullScreen && qApp->HideScrollBarInFullscreen();
+                setHorizontalScrollBarPolicy(!willBeHide && size().width() < sceneRect.width()+verticalScrollBar()->width() ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff );
+                setVerticalScrollBarPolicy(!willBeHide && size().height() < sceneRect.height()+horizontalScrollBar()->height() ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff );
+                // the left button drags the images freely (mousePressEvent) instead of the hand drag of QGraphicsView
+                setDragMode(QGraphicsView::NoDrag);
+                if(afterLoupe) {
+                    horizontalScrollBar()->setValue(m_scrollBaseValues.x());
+                    verticalScrollBar()->setValue(m_scrollBaseValues.y());
+                }
+            }
+        } else {
+            setDragMode(QGraphicsView::NoDrag);
+        }
     }
+    QRectF newrect = scene()->sceneRect();
 
     // Correct the scroll bar so that it keep at the center of the viewport
     // when the image display magnification is changed.
@@ -280,11 +321,14 @@ void ImageView::setSceneRectMode(bool scrolled, const QRect &sceneRect)
     // Without the mouse over the images (zooming with the keys), the zoom keeps the center
     bool pannedByCursor = newMode && !m_loupeEnable && qApp->ScrollWithCursorWhenZooming()
             && viewport()->rect().contains(viewport()->mapFromGlobal(QCursor::pos()));
+    // Free panning places the images itself (applyFreePan), and the first layout after it puts them back
+    // without the scroll position of the free panning
+    bool afterFreePan = !freePan && m_afterFreePan && m_readyStack == 1;
     bool scaleChanged = false;
     if (m_readyStack == 1) {
         qreal newScale = m_pages[0].DrawScale;
         scaleChanged = m_beforeScale != newScale;
-        if(!qApp->Fitting()) {
+        if(!qApp->Fitting() && !freePan && !afterFreePan) {
             // zoomBy() keeps the point under the mouse in place itself when zooming with the wheel
             if (!m_loupeEnable && !pannedByCursor && m_zoomAnchor.x() < 0 && m_beforeScale > 0 && m_beforeScale != newScale) {
                 int vw = 0.5*viewport()->width();
@@ -297,6 +341,15 @@ void ImageView::setSceneRectMode(bool scrolled, const QRect &sceneRect)
             }
         }
         m_beforeScale = newScale;
+    }
+    if(afterFreePan) {
+        m_afterFreePan = false;
+        // 'Scroll with cursor when zooming' has placed them where the mouse pans them (scrollOnZoomMode),
+        // otherwise they start at the top left, like a newly opened image
+        if(newMode && !m_loupeEnable && !qApp->ScrollWithCursorWhenZooming()) {
+            horizontalScrollBar()->setValue(horizontalScrollBar()->minimum());
+            verticalScrollBar()->setValue(verticalScrollBar()->minimum());
+        }
     }
 
     if(m_scrollMode != newMode)
@@ -346,6 +399,107 @@ void ImageView::scrollOnZoomMode()
     const QRectF sceneRect = scene()->sceneRect();
     horizontalScrollBar()->setValue(horizontalScrollBar()->minimum()+cursorPos.x()*(horizontalScrollBar()->maximum()-horizontalScrollBar()->minimum())/width());
     verticalScrollBar()->setValue(horizontalScrollBar()->minimum()+cursorPos.y()*(verticalScrollBar()->maximum()-horizontalScrollBar()->minimum())/height());
+}
+
+QRectF ImageView::pagesRect() const
+{
+    QRectF rect;
+    for(const PageContent& page : m_pages)
+        if(page.GrItem)
+            rect = rect.united(page.GrItem->sceneBoundingRect());
+    return rect;
+}
+
+// Free panning, like PureRef: the left button drags the images anywhere, also beyond the edges of the view.
+// This much of the images (in viewport pixels) stays in the view, so that they cannot be lost
+#define FREE_PAN_MARGIN 48
+
+QString ImageView::freePanKey() const
+{
+    QString key;
+    for(const PageContent& page : m_pages)
+        key += QString("%1|%2\n").arg(page.Ic.Path).arg(int(page.Separation));
+    return key;
+}
+
+void ImageView::startDragPending(QMouseEvent *event)
+{
+    // not on the left and right edges, where a click turns the page (MainWindow::eventFilter)
+    if(event->button() != Qt::LeftButton || event->buttons() != Qt::LeftButton || m_pages.isEmpty()
+            || qApp->LoupeTool() || m_hoverState == Qt::AnchorLeft || m_hoverState == Qt::AnchorRight)
+        return;
+    m_dragPending = true;
+    m_dragStartPos = event->position();
+}
+
+bool ImageView::enterFreePan()
+{
+    if(m_freePan)
+        return true;
+    QRectF pages = pagesRect();
+    if(pages.isEmpty())
+        return false;
+    // it starts where the images are now, so that they do not jump
+    m_freeOffset = viewportTransform().mapRect(pages).center() - viewportCenter();
+    m_freePan = true;
+    m_freePanKey = freePanKey();
+    m_afterFreePan = false;
+    applyFreePan();
+    return true;
+}
+
+void ImageView::leaveFreePan()
+{
+    m_dragPending = false;
+    if(m_dragging) {
+        m_dragging = false;
+        setCursor(m_isFullScreen && qApp->HideMouseCursorInFullscreen() ? Qt::BlankCursor : Qt::ArrowCursor);
+    }
+    if(!m_freePan)
+        return;
+    m_freePan = false;
+    m_afterFreePan = true;
+    // Without 'Scroll with cursor when zooming' the scroll bars come back. They are shown now, while the scene
+    // is still large: shown during the next layout, they resize the viewport, and resizeEvent() shrinks the scene under it
+    if(!qApp->ScrollWithCursorWhenZooming() && !(m_isFullScreen && qApp->HideScrollBarInFullscreen())) {
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    }
+}
+
+void ImageView::applyFreePan()
+{
+    // the policies first: hiding the scroll bars resizes the viewport
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setDragMode(QGraphicsView::NoDrag);
+    QRectF pages = pagesRect();
+    if(pages.isEmpty())
+        return;
+    // the images in view coordinates (viewport pixels, before scrolling)
+    QRectF images = transform().mapRect(pages);
+    QSizeF view = viewport()->size();
+    // a part of the images stays in the view
+    qreal limitX = qMax(0.0, (view.width() + images.width()) / 2 - qMin<qreal>(FREE_PAN_MARGIN, images.width()));
+    qreal limitY = qMax(0.0, (view.height() + images.height()) / 2 - qMin<qreal>(FREE_PAN_MARGIN, images.height()));
+    m_freeOffset = QPointF(qBound(-limitX, m_freeOffset.x(), limitX), qBound(-limitY, m_freeOffset.y(), limitY));
+    // the scene reaches one view beyond the images on each side, so that the view can scroll them anywhere
+    QRectF area = images.adjusted(-view.width(), -view.height(), view.width(), view.height());
+    scene()->setSceneRect(transform().inverted().mapRect(area));
+    // the value of a scroll bar is the view coordinate at the left (top) edge of the viewport
+    horizontalScrollBar()->setValue(qRound(images.center().x() - view.width() / 2 - m_freeOffset.x()));
+    verticalScrollBar()->setValue(qRound(images.center().y() - view.height() / 2 - m_freeOffset.y()));
+}
+
+void ImageView::scrollBy(int dx, int dy)
+{
+    if(m_freePan) {
+        m_freeOffset -= QPointF(dx, dy);
+        applyFreePan();
+        return;
+    }
+    horizontalScrollBar()->setValue(horizontalScrollBar()->value() + dx);
+    verticalScrollBar()->setValue(verticalScrollBar()->value() + dy);
 }
 
 void ImageView::updateViewportOffset(QPointF moved)
@@ -407,10 +561,12 @@ void ImageView::setCursor(const QCursor &cursor)
 void ImageView::resizeEvent(QResizeEvent *event)
 {
     static int resizeCount = 0;
-    if(scene() && !m_isFullScreen) {
+    if(scene() && !m_isFullScreen && !m_freePan) {
         scene()->setSceneRect(QRect(QPoint(), event->size()));
     }
     QGraphicsView::resizeEvent(event);
+    // also while resizing skips readyForPaint(), so that the text of the right page stays at the right edge
+    updateSignages();
     if (resizeCount == 0) {
         resizeCount++;
         qreal newRatio = screen()->devicePixelRatio();
@@ -586,6 +742,27 @@ void ImageView::onActionHideMouseCursorInFullscreen_triggered(bool enable)
 void ImageView::mouseMoveEvent(QMouseEvent *e)
 {
     QGraphicsView::mouseMoveEvent(e);
+    // dragging the images with the left button
+    if(m_dragPending || m_dragging) {
+        if(!(e->buttons() & Qt::LeftButton)) {
+            // the release was missed
+            m_dragPending = m_dragging = false;
+        } else {
+            QPointF moved = e->position() - m_dragStartPos;
+            if(!m_dragging && moved.manhattanLength() >= QApplication::startDragDistance() && enterFreePan()) {
+                m_dragging = true;
+                m_dragStartOffset = m_freeOffset;
+                if(!(m_isFullScreen && qApp->HideMouseCursorInFullscreen()))
+                    setCursor(Qt::ClosedHandCursor);
+            }
+            if(m_dragging) {
+                // the point of the images under the cursor follows it
+                m_freeOffset = m_dragStartOffset + moved;
+                applyFreePan();
+                return;
+            }
+        }
+    }
 //    qDebug() << "qApp->HideMouseCursorInFullscreen()" << qApp->HideMouseCursorInFullscreen();
     int NOT_HOVER_AREA = width() / 3;
     int hover_border = qApp->LargeToolbarIcons() ? 3 * HOVER_BORDER : HOVER_BORDER;
@@ -620,7 +797,8 @@ void ImageView::mouseMoveEvent(QMouseEvent *e)
 //    qDebug() << qApp->ScrollWithCursorWhenZooming() << scene()->sceneRect() << size();
     if(m_loupeEnable)
         scrollOnLoupeMode();
-    else if(qApp->ScrollWithCursorWhenZooming() && (scene()->sceneRect().width() > width() || scene()->sceneRect().height() > height())) {
+    // the images dragged freely are not panned by the mouse
+    else if(!m_freePan && qApp->ScrollWithCursorWhenZooming() && (scene()->sceneRect().width() > width() || scene()->sceneRect().height() > height())) {
         scrollOnZoomMode();
     }
 
@@ -679,15 +857,27 @@ void ImageView::wheelEvent(QWheelEvent *event)
 void ImageView::mousePressEvent(QMouseEvent *event)
 {
     if(!qApp->LoupeTool() || (event->buttons() != Qt::LeftButton)) {
+        // the press is not accepted, so that MainWindow still gets it for the mouse actions
+        startDragPending(event);
         QGraphicsView::mousePressEvent(event);
         return;
     }
+    leaveFreePan();
     m_loupeEnable = true;
     readyForPaint();
 }
 
 void ImageView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if(event->button() == Qt::LeftButton && (m_dragPending || m_dragging)) {
+        bool dragged = m_dragging;
+        m_dragPending = m_dragging = false;
+        if(dragged) {
+            setCursor(m_isFullScreen && qApp->HideMouseCursorInFullscreen() ? Qt::BlankCursor : Qt::ArrowCursor);
+            event->accept();
+            return;
+        }
+    }
     if(!qApp->LoupeTool() || (event->buttons() & Qt::LeftButton)) {
         QGraphicsView::mouseReleaseEvent(event);
         return;
@@ -696,8 +886,25 @@ void ImageView::mouseReleaseEvent(QMouseEvent *event)
     readyForPaint();
 }
 
+void ImageView::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    // double-clicking puts back the images dragged freely
+    if(m_freePan && event->button() == Qt::LeftButton
+            && m_hoverState != Qt::AnchorLeft && m_hoverState != Qt::AnchorRight) {
+        leaveFreePan();
+        readyForPaint();
+        event->accept();
+        return;
+    }
+    // the second press of a double-click can start a drag too
+    startDragPending(event);
+    QGraphicsView::mouseDoubleClickEvent(event);
+}
+
 void ImageView::on_fitting_triggered(bool enable)
 {
+    // M puts back the images dragged freely
+    leaveFreePan();
     if (enable) {
         qApp->setFitting(enable);
         readyForPaint();
@@ -712,6 +919,8 @@ void ImageView::on_fitToWindow_triggered(bool enable)
     if(!enable) {
         return;
     }
+    // F puts back the images dragged freely
+    leaveFreePan();
     // fitting is on before fittingChanged, so that the Fitting button follows
     qApp->setImageFitMode(qvEnums::FitToRect);
     qApp->setFitting(true);
@@ -724,6 +933,7 @@ void ImageView::on_fitToWidth_triggered(bool enable)
     if(!enable) {
         return;
     }
+    leaveFreePan();
     qApp->setImageFitMode(qvEnums::FitToWidth);
     qApp->setFitting(true);
     emit fittingChanged(qvEnums::FitToWidth);
@@ -769,14 +979,22 @@ void ImageView::zoomBy(qreal factor, qreal snapRange, const QPoint& anchor)
     next = qBound(MIN_ZOOM, next, MAX_ZOOM);
     qApp->setZoomScale(next);
 
+    if(m_freePan && !m_loupeEnable) {
+        // The images dragged freely stay where they are: the point under the anchor stays in place,
+        // the cursor for the wheel, the center of the view for the keys
+        QPointF fixed = anchor.x() >= 0 ? QPointF(anchor) : viewportCenter();
+        QRectF shown = viewportTransform().mapRect(pagesRect());
+        QPointF relative(0.5, 0.5);
+        if(!shown.isEmpty())
+            relative = QPointF((fixed.x() - shown.left()) / shown.width(), (fixed.y() - shown.top()) / shown.height());
+        readyForPaint();
+        QSizeF zoomed = transform().mapRect(pagesRect()).size();
+        m_freeOffset = fixed + QPointF((0.5 - relative.x()) * zoomed.width(), (0.5 - relative.y()) * zoomed.height()) - viewportCenter();
+        applyFreePan();
+        return;
+    }
+
     // the point of the images under the anchor, relative to the rectangle of the images
-    auto pagesRect = [this] {
-        QRectF rect;
-        for(const PageContent& page : m_pages)
-            if(page.GrItem)
-                rect = rect.united(page.GrItem->sceneBoundingRect());
-        return rect;
-    };
     QRectF before = pagesRect();
     // with 'Scroll with cursor when zooming', the position of the mouse scrolls the images instead
     bool anchored = anchor.x() >= 0 && !before.isEmpty() && !qApp->ScrollWithCursorWhenZooming();
