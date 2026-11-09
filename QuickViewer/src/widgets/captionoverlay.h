@@ -2,6 +2,8 @@
 #define CAPTIONOVERLAY_H
 
 #include <QFrame>
+#include <QHash>
+#include <QIcon>
 #include <functional>
 
 #include "captionfile.h"
@@ -19,6 +21,8 @@ class QVBoxLayout;
  * Each caption candidate of a file split by "---===---" lines has its own box, which can be added, removed,
  * moved and named (the comment of its separator line).
  * It looks and moves like PromptOverlay, and is put at the bottom left by default (the prompt is at the bottom right).
+ * Like the prompt, it is shown only for images that have a caption file. Its height fits the whole text,
+ * with no scroll bars; only text taller than the view is cut, and scrolls with the wheel and the cursor
  * Ctrl+S saves the caption, and the changes are also saved when the image changes or the editor is hidden
  */
 class CaptionOverlay : public QFrame
@@ -27,7 +31,7 @@ class CaptionOverlay : public QFrame
 public:
     explicit CaptionOverlay(QAbstractScrollArea* view);
     /**
-     * @brief setImage edits the caption of an image file (an empty path hides the editor, e.g. for archives)
+     * @brief setImage edits the caption of an image file (hidden without a caption file, or for an empty path, e.g. for archives)
      */
     void setImage(const QString& imagePath);
     /**
@@ -82,6 +86,15 @@ private:
 
     QToolButton* createButton(const QString& icon, const QString& toolTip, std::function<void()> clicked);
     Candidate createCandidate();
+    /**
+     * @brief appendCandidate adds an empty box at the end, reusing a hidden one when there is one.
+     * The boxes are kept, because creating them is slow when the images are turned fast
+     */
+    void appendCandidate();
+    /**
+     * @brief releaseCandidate takes a box out of the editor and keeps it hidden for appendCandidate()
+     */
+    void releaseCandidate(int index);
     int indexOf(QWidget* box) const;
     void addCandidate();
     void removeCandidate(QWidget* box);
@@ -123,12 +136,14 @@ private:
     QWidget* m_boxes;
     QVBoxLayout* m_boxesLayout;
     QList<Candidate> m_candidates;
+    QList<Candidate> m_spareCandidates;
+    // the icons are drawn once (from SVG)
+    QHash<QString, QIcon> m_icons;
 
-    // the size set by the user (invalid when it fits the text), the side of the view it stays at and the distance from it
+    // the width set by the user (the height always fits the text), the side of the view it stays at and the distance from it
     QSize m_customSize;
     Qt::Alignment m_alignment;
     QPoint m_offset;
-    int m_minimumHeight;
 
     DragMode m_dragMode;
     Qt::Edges m_resizeEdges;
