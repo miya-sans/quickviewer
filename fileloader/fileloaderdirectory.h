@@ -35,6 +35,10 @@ public:
      */
     QStringList contents();
     /**
+     * @brief setContents replaces the image files after a change in the folder was found elsewhere
+     */
+    void setContents(const QStringList& files) { m_imageFileList = files; }
+    /**
      * @brief subArchives
      * @return all archive files with in the instance
      */

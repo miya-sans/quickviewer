@@ -91,9 +91,27 @@ class TimeOrderdCacheFuture : public TimeOrderdCache<Key, QFuture<T> >
 public:
      TimeOrderdCacheFuture(int maxsize=30)
          : TimeOrderdCache<Key, QFuture<T> >(maxsize){}
+    /**
+     * @brief trash does not wait for a removed future that is still running (that blocked the GUI thread).
+     * The task may use its owner, so waitForDiscarded() must be called before the owner is deleted
+     */
     void trash(QFuture<T> oldest) {
-        oldest.result();
+        if(oldest.isFinished())
+            return;
+        QMutableListIterator<QFuture<T> > it(m_discarded);
+        while(it.hasNext()) {
+            if(it.next().isFinished())
+                it.remove();
+        }
+        m_discarded << oldest;
     }
+    void waitForDiscarded() {
+        for(QFuture<T>& f : m_discarded)
+            f.waitForFinished();
+        m_discarded.clear();
+    }
+private:
+    QList<QFuture<T> > m_discarded;
 };
 
 

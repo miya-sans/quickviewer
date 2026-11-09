@@ -202,7 +202,8 @@ private:
     SavedPoint m_ptLeftTop;
     QGraphicsScene* m_scene;
     Qt::AnchorPoint m_hoverState;
-    QVector<int> m_pageRotations;
+    // rotation of each image by its file name, so that it stays when images are added to the folder
+    QHash<QString, int> m_pageRotations;
     /**
      * @brief m_zoomAnchor the point of the viewport that stays in place while zooming, (-1, -1) for the center.
      * The manual zoom itself is QVApplication::ZoomScale(), remembered for the next files and the next start

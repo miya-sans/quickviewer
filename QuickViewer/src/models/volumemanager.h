@@ -135,6 +135,29 @@ public:
     void setOpenedWithSpecifiedImageFile(bool openedWithSpecifiedImageFile) { m_openedWithSpecifiedImageFile = openedWithSpecifiedImageFile; }
     void moveToThread(QThread *targetThread);
 
+    /**
+     * @brief indexOfFileName returns the page index of the file name in the current order, or -1
+     */
+    int indexOfFileName(const QString& name);
+    /**
+     * @brief updateFileList applies the files added to or removed from the folder, without enumerating it again.
+     * The cached images are kept, except those of the removed and changed files.
+     * The counter stays on the same file, or moves to the nearest remaining one.
+     * on_ready() is not called.
+     * @param contents all image files of the folder now (in the order of the file loader)
+     * @param added the new files (in contents)
+     * @param removed the files not in contents anymore
+     * @param changed files whose size or time changed
+     * @return false if nothing changed
+     */
+    bool updateFileList(const QStringList& contents, const QStringList& added, const QSet<QString>& removed, const QStringList& changed);
+    /**
+     * @brief dropFailedImages removes the cached images that could not be decoded (e.g. a file still being written),
+     * so that they are read again when needed
+     * @return the names of the removed images
+     */
+    QStringList dropFailedImages(const QStringList& names);
+
 public slots:
     void on_enmumerated();
 
@@ -149,7 +172,8 @@ private:
     future_image m_currentCache;
     ImageContent m_currentCacheSync;
 
-    TimeOrderdCacheFuture<int, ImageContent> m_imageCache;
+    // keyed by the file name, so that the cache stays valid when files are added or removed
+    TimeOrderdCacheFuture<QString, ImageContent> m_imageCache;
 //    QMap<int, future_image> m_imageCache;
 //    QList<int> m_pageCache;
 

@@ -8,6 +8,7 @@
 #include "qzimg.h"
 #include "pagemanager.h"
 #include "fileloader.h"
+#include "fileloaderdirectory.h"
 #include "svgnative/SVGDocument.h"
 #include "svgnative/ports/qt/QSVGRenderer.h"
 
@@ -30,6 +31,8 @@ VolumeManager::VolumeManager(QObject *parent, IFileLoader* loader, PageManager* 
 
 VolumeManager::~VolumeManager() {
     m_imageCache.clear();
+    // the images still being decoded use the loader
+    m_imageCache.waitForDiscarded();
     if(m_loader) {
         m_loader->deleteLater();
         m_loader = nullptr;
@@ -56,7 +59,7 @@ void VolumeManager::on_enmumerated()
     // foreach(const QString& fl, m_filelist) {
     //     m_imageMetadataList << QvImageMetadata(this, fl);
     // }
-    m_imageCache.insert(m_filelist.indexOf(m_subfilename), QtConcurrent::run(pathThrough, m_currentCacheSync));
+    m_imageCache.insert(m_subfilename, QtConcurrent::run(pathThrough, m_currentCacheSync));
     findImageByName(m_subfilename);
     setCacheMode(VolumeManager::Normal);
     on_ready();
@@ -188,6 +191,118 @@ QString VolumeManager::getIndexedFileName(int idx) {
         return m_imageMetadataList[idx].filename();
 }
 
+int VolumeManager::indexOfFileName(const QString& name)
+{
+    if(!m_randomfilelist.isEmpty())
+        return m_randomfilelist.indexOf(name);
+    if(qApp->ImageSortBy() == qvEnums::SortByFileName
+        || qApp->ImageSortBy() == qvEnums::SortByFileNameDescending)
+        return m_filelist.indexOf(name);
+    for(int i = 0; i < m_imageMetadataList.size(); i++) {
+        if(m_imageMetadataList[i].filename() == name)
+            return i;
+    }
+    return -1;
+}
+
+bool VolumeManager::updateFileList(const QStringList& contents, const QStringList& added, const QSet<QString>& removed, const QStringList& changed)
+{
+    if(added.isEmpty() && removed.isEmpty() && changed.isEmpty())
+        return false;
+
+    // the file of the counter, or the nearest remaining one (the next ones first)
+    QString current;
+    for(int i = m_cnt; i < m_filelist.size() && current.isEmpty(); i++) {
+        QString name = getIndexedFileName(i);
+        if(!removed.contains(name))
+            current = name;
+    }
+    for(int i = m_cnt-1; i >= 0 && current.isEmpty(); i--) {
+        QString name = getIndexedFileName(i);
+        if(!removed.contains(name))
+            current = name;
+    }
+
+    foreach(const QString& name, removed)
+        m_imageCache.remove(name);
+    foreach(const QString& name, changed)
+        m_imageCache.remove(name);
+    if(FileLoaderDirectory* loader = dynamic_cast<FileLoaderDirectory*>(m_loader))
+        loader->setContents(contents);
+
+    // The new files are inserted into the sorted lists: with thousands of files, sorting all again is slow,
+    // and it would read the size or time of every file again
+    const qvEnums::ImageSortBy sortBy = qApp->ImageSortBy();
+    if(sortBy == qvEnums::SortByFileName || sortBy == qvEnums::SortByFileNameDescending) {
+        if(!removed.isEmpty()) {
+            m_filelist.removeIf([&removed](const QString& name) { return removed.contains(name); });
+            m_imageMetadataList.removeIf([&removed](const QvImageMetadata& md) { return removed.contains(md.filename()); });
+        }
+        QCollator col;
+        col.setNumericMode(true);
+        const bool descending = sortBy == qvEnums::SortByFileNameDescending;
+        auto less = [&col, descending](const QString& m1, const QString& m2) {
+            int c = col.compare(m1, m2);
+            return descending ? c > 0 : c < 0;
+        };
+        foreach(const QString& name, added) {
+            int pos = std::upper_bound(m_filelist.begin(), m_filelist.end(), name, less) - m_filelist.begin();
+            m_filelist.insert(pos, name);
+            // not used when sorted by name, but kept with the same files
+            m_imageMetadataList.insert(qMin(pos, (int)m_imageMetadataList.size()), QvImageMetadata(this, name));
+        }
+    } else {
+        m_filelist = contents;
+        QSet<QString> changedSet(changed.begin(), changed.end());
+        m_imageMetadataList.removeIf([&removed, &changedSet](const QvImageMetadata& md) {
+            return removed.contains(md.filename()) || changedSet.contains(md.filename());
+        });
+        bool (*less)(const QvImageMetadata&, const QvImageMetadata&) = nullptr;
+        switch(sortBy) {
+        case qvEnums::SortByFileSize: less = fileSizeLessThan; break;
+        case qvEnums::SortByFileSizeDescending: less = fileSizeDescendingLessThan; break;
+        case qvEnums::SortByModifiedTime: less = modifiedTimeLessThan; break;
+        case qvEnums::SortByModifiedTimeDescending: less = modifiedTimeDescendingLessThan; break;
+        default: break;
+        }
+        foreach(const QString& name, added + changed) {
+            QvImageMetadata md(this, name);
+            int pos = less ? std::upper_bound(m_imageMetadataList.begin(), m_imageMetadataList.end(), md, less) - m_imageMetadataList.begin()
+                           : m_imageMetadataList.size();
+            m_imageMetadataList.insert(pos, md);
+        }
+    }
+    if(!m_randomfilelist.isEmpty()) {
+        // the slide show in random order shows the new files somewhere later
+        if(!removed.isEmpty())
+            m_randomfilelist.removeIf([&removed](const QString& name) { return removed.contains(name); });
+        std::random_device rd;
+        std::mt19937 g(rd());
+        foreach(const QString& name, added) {
+            int from = qMin(m_cnt+1, (int)m_randomfilelist.size());
+            m_randomfilelist.insert(std::uniform_int_distribution<int>(from, (int)m_randomfilelist.size())(g), name);
+        }
+    }
+
+    int idx = current.isEmpty() ? -1 : indexOfFileName(current);
+    m_cnt = idx >= 0 ? idx : qBound(0, m_cnt, qMax(0, (int)m_filelist.size()-1));
+    return true;
+}
+
+QStringList VolumeManager::dropFailedImages(const QStringList& names)
+{
+    QStringList dropped;
+    foreach(QString name, names) {
+        if(!m_imageCache.contains(name) || !m_imageCache.object(name).isFinished())
+            continue;
+        ImageContent ic = m_imageCache.object(name).result();
+        if(ic.Image.isNull() && ic.Movie.isNull()) {
+            m_imageCache.remove(name);
+            dropped << name;
+        }
+    }
+    return dropped;
+}
 
 void VolumeManager::on_ready()
 {
@@ -238,8 +353,9 @@ void VolumeManager::on_ready()
             int cnt = m_cnt+of;
             if(cnt < 0 || cnt >= m_filelist.size())
                 continue;
-            ImageContent ic = futureLoadImageFromFileVolume(this, m_filelist[cnt], QSize());
-            m_imageCache.insert(cnt, QtConcurrent::run(pathThrough, ic));
+            QString name = getIndexedFileName(cnt);
+            ImageContent ic = futureLoadImageFromFileVolume(this, name, QSize());
+            m_imageCache.insert(name, QtConcurrent::run(pathThrough, ic));
         }
         return;
     default:
@@ -250,8 +366,9 @@ void VolumeManager::on_ready()
         int cnt = m_cnt+of;
         if(cnt < 0 || cnt >= m_filelist.size())
             continue;
-        if(qApp->Effect() < qvEnums::UsingFixedShader && m_imageCache.contains(cnt) && m_imageCache.object(cnt).isFinished() ) {
-            ImageContent ic = m_imageCache.object(cnt).result();
+        QString name = getIndexedFileName(cnt);
+        if(qApp->Effect() < qvEnums::UsingFixedShader && m_imageCache.contains(name) && m_imageCache.object(name).isFinished() ) {
+            ImageContent ic = m_imageCache.object(name).result();
             if(ic.ImportSize.isValid()) {
                 QSize pageSize = m_pageManager->viewportSize();
                 QSize resized = ic.Info.Orientation==6 || ic.Info.Orientation==8 ? QSize(pageSize.height(), pageSize.width()) : pageSize;
@@ -259,23 +376,24 @@ void VolumeManager::on_ready()
 
                 if(ic.ResizedImage.size() != resized && !ic.Image.isNull()) {
                     qDebug() << ic.ResizedImage.size() << resized;
-                    m_imageCache.insert(cnt, QtConcurrent::run(futureReizeImage, ic, m_pageManager->viewportSize()));
+                    m_imageCache.insert(name, QtConcurrent::run(futureReizeImage, ic, m_pageManager->viewportSize()));
                 }
             }
         }
-        if(m_imageCache.checkShouldBeInserted(cnt)) {
+        if(m_imageCache.checkShouldBeInserted(name)) {
 //            qDebug() << "on_ready()" << m_filelist[cnt];
-            m_imageCache.insertNoChecked(cnt, QtConcurrent::run(
+            m_imageCache.insertNoChecked(name, QtConcurrent::run(
                  futureLoadImageFromFileVolume,
                  this,
-                 getIndexedFileName(cnt),
+                 name,
                  (m_pageManager && qApp->Effect() < qvEnums::UsingFixedShader)
                      ? m_pageManager->viewportSize()
                      : QSize())
             );
         }
     }
-    m_currentCache = m_imageCache.object(m_cnt);
+    QString current = getIndexedFileName(m_cnt);
+    m_currentCache = m_imageCache.object(current);
 }
 
 // Memory for the images read ahead and cached. e.g. 7 images of 7224x4064 (112MB each) on 64bit
@@ -290,9 +408,10 @@ void VolumeManager::on_ready()
 void VolumeManager::limitPrefetchByMemory(QList<int>& offsets)
 {
     int count;
-    if(m_imageCache.contains(m_cnt) && m_imageCache.object(m_cnt).isFinished()) {
+    QString current = getIndexedFileName(m_cnt);
+    if(m_imageCache.contains(current) && m_imageCache.object(current).isFinished()) {
         // estimate the size of the images in the volume from the current one
-        const ImageContent ic = m_imageCache.object(m_cnt).result();
+        const ImageContent ic = m_imageCache.object(current).result();
         qint64 bytes = ic.Image.sizeInBytes() + ic.ResizedImage.sizeInBytes();
         count = bytes > 0 ? (int)qMax<qint64>(MIN_PREFETCH_IMAGES, PREFETCH_MEMORY_BUDGET / bytes) : offsets.size();
         m_imageCache.setMaxSize(qBound(MIN_PREFETCH_IMAGES, count, qApp->MaxImagesCache()));
@@ -319,14 +438,15 @@ const ImageContent VolumeManager::getIndexedImageContent(int idx)
 {
     if(idx < 0 || idx >= m_filelist.size())
         return ImageContent();
+    QString name = getIndexedFileName(idx);
     // The page may not have been prefetched (e.g. moving backward in dual view)
-    if(!m_imageCache.contains(idx)) {
-        ImageContent ic = futureLoadImageFromFileVolume(this, getIndexedFileName(idx), QSize());
-        m_imageCache.insert(idx, QtConcurrent::run(pathThrough, ic));
+    if(!m_imageCache.contains(name)) {
+        ImageContent ic = futureLoadImageFromFileVolume(this, name, QSize());
+        m_imageCache.insert(name, QtConcurrent::run(pathThrough, ic));
         return ic;
     }
 //    future_image cache = m_imageCache[idx];
-    future_image& cache = m_imageCache.object(idx);
+    future_image& cache = m_imageCache.object(name);
 //    if(!cache.isFinished())
 //        cache.waitForFinished();
     return cache.result();
