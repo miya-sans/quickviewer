@@ -395,20 +395,21 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     if(this->focusWidget() != ui->graphicsView)
         return;
     if(ui->graphicsView->isScrollMode() && !qApp->ScrollWithCursorWhenZooming()) {
+        // scrollBy() also moves the images dragged freely
         if(seq.toString()=="Left") {
-            ui->graphicsView->horizontalScrollBar()->setValue(ui->graphicsView->horizontalScrollBar()->value()-300);
+            ui->graphicsView->scrollBy(-300, 0);
             return;
         }
         if(seq.toString()=="Right") {
-            ui->graphicsView->horizontalScrollBar()->setValue(ui->graphicsView->horizontalScrollBar()->value()+300);
+            ui->graphicsView->scrollBy(300, 0);
             return;
         }
         if(seq.toString()=="Up") {
-            ui->graphicsView->verticalScrollBar()->setValue(ui->graphicsView->verticalScrollBar()->value()-300);
+            ui->graphicsView->scrollBy(0, -300);
             return;
         }
         if(seq.toString()=="Down") {
-            ui->graphicsView->verticalScrollBar()->setValue(ui->graphicsView->verticalScrollBar()->value()+300);
+            ui->graphicsView->scrollBy(0, 300);
             return;
         }
     }

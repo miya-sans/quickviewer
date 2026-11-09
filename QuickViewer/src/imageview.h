@@ -66,6 +66,16 @@ public:
     ImageRetouch brightness() { return m_retouchParams; }
     qreal currentPixelRatio() { return m_lastScreenPixelRatio; }
     void setCursor(const QCursor& cursor);
+    /**
+     * @brief isFreePan the images were dragged with the left button (like PureRef): they are placed freely,
+     * also beyond the edges of the view, the mouse no longer pans them, and zooming keeps them where they are.
+     * Double-clicking, another image, F (Fit to window) and M (Fitting) put them back
+     */
+    bool isFreePan() const { return m_freePan; }
+    /**
+     * @brief scrollBy scrolls the view by (dx, dy) viewport pixels (the arrow keys); the images dragged freely move instead
+     */
+    void scrollBy(int dx, int dy);
 
 signals:
     /**
@@ -86,6 +96,7 @@ protected:
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
 //    void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 
@@ -152,6 +163,33 @@ private:
      * The scale stops at 100% when a step passes it, or ends within snapRange of it
      */
     void zoomBy(qreal factor, qreal snapRange, const QPoint& anchor = QPoint(-1, -1));
+    /**
+     * @brief pagesRect the rectangle of the images in the scene
+     */
+    QRectF pagesRect() const;
+    QPointF viewportCenter() const { return QPointF(viewport()->width() / 2.0, viewport()->height() / 2.0); }
+
+    // Free panning: the left button drags the images anywhere in the view
+    /**
+     * @brief startDragPending remembers a press of the left button on the images, a drag starts when the mouse moves a few pixels
+     */
+    void startDragPending(QMouseEvent* event);
+    /**
+     * @brief enterFreePan starts free panning where the images are now. false without images
+     */
+    bool enterFreePan();
+    /**
+     * @brief leaveFreePan stops free panning, the next layout places the images like before the drag. It does not repaint
+     */
+    void leaveFreePan();
+    /**
+     * @brief applyFreePan scrolls the view so that the center of the images is m_freeOffset from the center of the viewport
+     */
+    void applyFreePan();
+    /**
+     * @brief freePanKey identifies the images shown (paths and halves of wide images): another image leaves free panning
+     */
+    QString freePanKey() const;
 
     RendererType m_renderer;
     QVector<PageContent> m_pages;
@@ -196,6 +234,22 @@ private:
 
     // Brightness
     ImageRetouch m_retouchParams;
+
+    // Free panning
+    bool m_freePan = false;
+    bool m_dragPending = false;
+    bool m_dragging = false;
+    /**
+     * @brief m_afterFreePan the first layout after free panning places the images like without it
+     */
+    bool m_afterFreePan = false;
+    /**
+     * @brief m_freeOffset the center of the images minus the center of the viewport, in viewport pixels
+     */
+    QPointF m_freeOffset;
+    QPointF m_dragStartOffset;
+    QPointF m_dragStartPos;
+    QString m_freePanKey;
 };
 
 
