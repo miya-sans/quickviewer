@@ -9,12 +9,9 @@
 #define OVERLAY_MIN_WIDTH 240
 // the frame and the margin around the contents are the edges for resizing
 #define OVERLAY_GRIP 5
-#define OVERLAY_CORNER_GRIP 14
 #define SECTION_MARGIN 6
 #define ROW_HEIGHT 20
-// the lines of each text when the overlay fits the text
-#define PROMPT_LINES 6
-#define NEGATIVE_LINES 4
+// the lines of all the settings (the prompts are shown whole)
 #define SETTINGS_LINES 4
 
 static const QColor TEXT_COLOR(0xdd, 0xdd, 0xdd);
@@ -47,8 +44,61 @@ static const char* OVERLAY_STYLESHEET =
 namespace {
 
 /**
+ * @brief tagRange the tag at a position of a line of a prompt: the text between the commas outside brackets,
+ * without the spaces around it. Escaped characters like "\(" are not brackets, and unbalanced brackets are ignored
+ * @return the start and the end of the tag, or an empty range
+ */
+QPair<int, int> tagRange(const QString& text, int pos)
+{
+    auto isOpening = [](QChar c) { return c == '(' || c == '[' || c == '{' || c == '<'; };
+    auto isClosing = [](QChar c) { return c == ')' || c == ']' || c == '}' || c == '>'; };
+    const int length = text.size();
+    bool balanced = true;
+    int depth = 0;
+    for(int i = 0; i < length && balanced; i++) {
+        if(text.at(i) == '\\')
+            i++;
+        else if(isOpening(text.at(i)))
+            depth++;
+        else if(isClosing(text.at(i)))
+            balanced = --depth >= 0;
+    }
+    balanced = balanced && depth == 0;
+
+    depth = 0;
+    int start = 0;
+    for(int i = 0; i <= length; i++) {
+        if(i < length) {
+            const QChar c = text.at(i);
+            if(c == '\\') {
+                i++;
+                continue;
+            }
+            if(balanced && isOpening(c))
+                depth++;
+            else if(balanced && isClosing(c))
+                depth--;
+            if(c != ',' || depth > 0)
+                continue;
+        }
+        // text[start, i) is a tag. A click on a comma is in the tag before it
+        if(pos <= i || i >= length) {
+            int end = qMin(i, length);
+            while(start < end && text.at(start).isSpace())
+                start++;
+            while(end > start && text.at(end - 1).isSpace())
+                end--;
+            return qMakePair(start, end);
+        }
+        start = i + 1;
+    }
+    return qMakePair(0, 0);
+}
+
+/**
  * @brief The PromptTextEdit class
- * A read-only text which can be selected. The wheel scrolls it, but never zooms it
+ * A read-only text which can be selected. Double-clicking selects a tag, and Ctrl+C copies the selection.
+ * The other keys go to the image view. The wheel scrolls the text, but never zooms it
  */
 class PromptTextEdit : public QTextEdit
 {
@@ -58,11 +108,13 @@ public:
     {
         setReadOnly(true);
         setTextInteractionFlags(Qt::TextSelectableByMouse);
-        // the keys must stay with the image view
-        setFocusPolicy(Qt::NoFocus);
+        // a click gives it the keys for Ctrl+C. The other keys are given back to the image view
+        setFocusPolicy(Qt::ClickFocus);
         setFrameShape(QFrame::NoFrame);
+        // the prompts are shown whole, like the caption editor. A text taller than the view scrolls with
+        // the wheel and the cursor
         setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
         document()->setDocumentMargin(0);
@@ -102,8 +154,106 @@ public:
         }
         return heights;
     }
+    /**
+     * @brief copySelection copies the selected text without its colors
+     */
+    void copySelection()
+    {
+        const QString text = textCursor().selection().toPlainText();
+        if(!text.isEmpty() && copied)
+            copied(text);
+    }
+
+    // the selected text to copy
+    std::function<void(const QString&)> copied;
+    // a key for the image view
+    std::function<void(QKeyEvent*)> forwardKey;
 
 protected:
+    bool event(QEvent* event) override
+    {
+        if(event->type() == QEvent::ShortcutOverride) {
+            // Every key comes to keyPressEvent(), like the image view, whose keys are not window shortcuts either
+            event->accept();
+            return true;
+        }
+        return QTextEdit::event(event);
+    }
+    void keyPressEvent(QKeyEvent* event) override
+    {
+        event->accept();
+        // Ctrl+C copies the selection instead of the image (with no selection, it still copies the image)
+        if(event->matches(QKeySequence::Copy) && textCursor().hasSelection()) {
+            copySelection();
+            return;
+        }
+        if(event->matches(QKeySequence::SelectAll)) {
+            selectAll();
+            return;
+        }
+        switch(event->key()) {
+        case Qt::Key_Shift:
+        case Qt::Key_Control:
+        case Qt::Key_Meta:
+        case Qt::Key_Alt:
+        case Qt::Key_AltGr:
+        case Qt::Key_CapsLock:
+        case Qt::Key_NumLock:
+            // e.g. Ctrl before C
+            return;
+        default:
+            // the image view gets the keys back and handles this one, e.g. the keys turning pages
+            if(forwardKey)
+                forwardKey(event);
+        }
+    }
+    void keyReleaseEvent(QKeyEvent* event) override { event->ignore(); }
+    bool focusNextPrevChild(bool) override
+    {
+        // Tab goes to the image view like the other keys
+        return false;
+    }
+    void focusOutEvent(QFocusEvent* event) override
+    {
+        // a click on the image or another text clears the selection, so that Ctrl+C copies what it shows.
+        // (Not for the context menu or another window)
+        if(event->reason() != Qt::PopupFocusReason && event->reason() != Qt::ActiveWindowFocusReason) {
+            QTextCursor cursor = textCursor();
+            if(cursor.hasSelection()) {
+                cursor.clearSelection();
+                setTextCursor(cursor);
+            }
+        }
+        QTextEdit::focusOutEvent(event);
+    }
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        // A press in the selection would drag the text instead of selecting another part. So it starts a new selection
+        // (Shift+click still extends it)
+        if(event->button() == Qt::LeftButton && !(event->modifiers() & Qt::ShiftModifier) && textCursor().hasSelection()) {
+            QTextCursor cursor = textCursor();
+            cursor.clearSelection();
+            setTextCursor(cursor);
+        }
+        QTextEdit::mousePressEvent(event);
+    }
+    void mouseDoubleClickEvent(QMouseEvent* event) override
+    {
+        // a double-click selects a tag, e.g. "(blue eyes:1.2)" or "<lora:name:0.8>"
+        if(event->button() == Qt::LeftButton) {
+            QTextCursor cursor = cursorForPosition(event->position().toPoint());
+            const QTextBlock block = cursor.block();
+            const QPair<int, int> range = tagRange(block.text(), cursor.positionInBlock());
+            if(range.first < range.second) {
+                cursor.setPosition(block.position() + range.first);
+                cursor.setPosition(block.position() + range.second, QTextCursor::KeepAnchor);
+                setTextCursor(cursor);
+                event->accept();
+                return;
+            }
+        }
+        QTextEdit::mouseDoubleClickEvent(event);
+    }
     void wheelEvent(QWheelEvent* event) override
     {
         // Ctrl+Wheel zooms the image, so the text is not zoomed
@@ -117,9 +267,11 @@ protected:
     {
         // the menu belongs to the main window so that it has the style of the theme
         QMenu menu(window());
-        QAction* copy = menu.addAction(QCoreApplication::translate("PromptOverlay", "&Copy"), this, &QTextEdit::copy);
+        QAction* copy = menu.addAction(QCoreApplication::translate("PromptOverlay", "&Copy"), this, &PromptTextEdit::copySelection);
+        copy->setShortcut(QKeySequence::Copy);
         copy->setEnabled(textCursor().hasSelection());
-        menu.addAction(QCoreApplication::translate("PromptOverlay", "Select &All"), this, &QTextEdit::selectAll);
+        QAction* all = menu.addAction(QCoreApplication::translate("PromptOverlay", "Select &All"), this, &QTextEdit::selectAll);
+        all->setShortcut(QKeySequence::SelectAll);
         menu.exec(event->globalPos());
         event->accept();
     }
@@ -267,7 +419,6 @@ PromptOverlay::PromptOverlay(QAbstractScrollArea *view)
     , m_customSize(qApp->PromptOverlaySize())
     , m_corner(Qt::Corner(qApp->PromptOverlayCorner()))
     , m_offset(qApp->PromptOverlayOffset())
-    , m_minimumHeight(0)
     , m_dragMode(NoDrag)
     , m_resizeEdges()
 {
@@ -344,6 +495,7 @@ PromptOverlay::PromptOverlay(QAbstractScrollArea *view)
         copyText(m_prompt.SettingText, tr("Copied all settings"));
     }, m_settingsText);
     m_settingsText->setVisible(qApp->PromptOverlayAllSettings());
+    m_settingsText->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_settingsButton->setIcon(qApp->flatIcon(qApp->PromptOverlayAllSettings() ? "chevron-down" : "chevron-right", LABEL_COLOR));
 
     QVBoxLayout* layout = new QVBoxLayout(this);
@@ -447,18 +599,14 @@ void PromptOverlay::mouseMoveEvent(QMouseEvent *event)
         move(rect.topLeft());
         return;
     }
+    // the height fits the text, so only the width changes
     QRect rect = m_pressGeometry;
     const int minWidth = qMin(OVERLAY_MIN_WIDTH, bounds.width());
-    const int minHeight = qMin(m_minimumHeight, bounds.height());
     if(m_resizeEdges & Qt::LeftEdge)
         rect.setLeft(qMin(qMax(bounds.left(), rect.left() + delta.x()), rect.right() + 1 - minWidth));
     if(m_resizeEdges & Qt::RightEdge)
         rect.setRight(qMax(qMin(bounds.right(), rect.right() + delta.x()), rect.left() + minWidth - 1));
-    if(m_resizeEdges & Qt::TopEdge)
-        rect.setTop(qMin(qMax(bounds.top(), rect.top() + delta.y()), rect.bottom() + 1 - minHeight));
-    if(m_resizeEdges & Qt::BottomEdge)
-        rect.setBottom(qMax(qMin(bounds.bottom(), rect.bottom() + delta.y()), rect.top() + minHeight - 1));
-    m_customSize = rect.size();
+    m_customSize = QSize(rect.width(), -1);
     updateAnchor(rect);
     relayout();
 }
@@ -537,7 +685,19 @@ QWidget *PromptOverlay::createSection(QWidget *title, const QString &copyToolTip
     titleLayout->addStretch(1);
     titleLayout->addWidget(copyButton);
 
-    text = new PromptTextEdit(box);
+    PromptTextEdit* edit = new PromptTextEdit(box);
+    edit->copied = [this](const QString& selection) {
+        QString shown = selection.simplified();
+        if(shown.size() > 60)
+            shown = shown.left(57) + "...";
+        copyText(selection, tr("Copied \"%1\"").arg(shown));
+    };
+    edit->forwardKey = [this](QKeyEvent* event) {
+        // (a key sent to the view would be taken as a shortcut override by the main window and dropped)
+        m_view->setFocus(Qt::OtherFocusReason);
+        emit viewKeyPressed(event);
+    };
+    text = edit;
     // the texts always have fixed heights, set by relayout()
     text->setFixedHeight(ROW_HEIGHT);
     QVBoxLayout* layout = new QVBoxLayout(box);
@@ -640,6 +800,10 @@ void PromptOverlay::updateVisibility()
         show();
         raise();
     } else {
+        // the keys go back to the image
+        QWidget* focus = QApplication::focusWidget();
+        if(focus && isAncestorOf(focus))
+            m_view->setFocus(Qt::OtherFocusReason);
         hide();
     }
 }
@@ -662,27 +826,27 @@ void PromptOverlay::relayout()
     if(bounds.width() < 40 || bounds.height() < 40)
         return;
     ensurePolished();
-    int width = m_customSize.isValid() ? m_customSize.width() : OVERLAY_DEFAULT_WIDTH;
+    int width = m_customSize.width() > 0 ? m_customSize.width() : OVERLAY_DEFAULT_WIDTH;
     width = qMin(qMax(width, OVERLAY_MIN_WIDTH), bounds.width());
     const int textWidth = qMax(40, width - 2 * (OVERLAY_GRIP + SECTION_MARGIN));
 
     struct Text {
         PromptTextEdit* edit;
         int line;
-        int fitted;
         int preferred;
         int height;
     };
     QList<Text> texts;
+    // the prompts are shown whole (maxLines 0), all the settings in a few lines with a scroll bar
     auto addText = [&](QWidget* box, QTextEdit* edit, int maxLines) {
         if(box->isHidden() || edit->isHidden())
             return;
         PromptTextEdit* text = static_cast<PromptTextEdit*>(edit);
-        const PromptTextEdit::Heights heights = text->contentHeights(textWidth, maxLines);
-        texts << Text{text, heights.line, heights.lines, qMax(heights.line, heights.all), 0};
+        const PromptTextEdit::Heights heights = text->contentHeights(textWidth, qMax(1, maxLines));
+        texts << Text{text, heights.line, qMax(heights.line, maxLines > 0 ? heights.lines : heights.all), 0};
     };
-    addText(m_positiveBox, m_positiveText, PROMPT_LINES);
-    addText(m_negativeBox, m_negativeText, NEGATIVE_LINES);
+    addText(m_positiveBox, m_positiveText, 0);
+    addText(m_negativeBox, m_negativeText, 0);
     addText(m_settingsBox, m_settingsText, SETTINGS_LINES);
 
     // the height of everything but the texts, whose current fixed heights are in the size hint.
@@ -700,11 +864,9 @@ void PromptOverlay::relayout()
     int chrome = sizeHint().height();
     for(const Text& text : texts)
         chrome -= text.edit->maximumHeight();
-    m_minimumHeight = chrome;
-    for(const Text& text : texts)
-        m_minimumHeight += qMin(text.preferred, text.line);
 
-    // at least a line of each text, then the room is shared by how much each text lacks
+    // all the text is shown. Only when it is taller than the view, each text has at least a line
+    // and the room is shared by how much each text lacks (the rest scrolls with the wheel and the cursor)
     auto distribute = [&](int available) {
         int used = 0, lack = 0;
         for(Text& text : texts) {
@@ -721,18 +883,13 @@ void PromptOverlay::relayout()
         }
     };
     int height = chrome;
-    if(m_customSize.isValid()) {
-        height = qMin(qMax(m_customSize.height(), m_minimumHeight), bounds.height());
+    for(Text& text : texts) {
+        text.height = text.preferred;
+        height += text.height;
+    }
+    if(height > bounds.height()) {
+        height = bounds.height();
         distribute(height - chrome);
-    } else {
-        for(Text& text : texts) {
-            text.height = qMin(text.preferred, text.fitted);
-            height += text.height;
-        }
-        if(height > bounds.height()) {
-            height = bounds.height();
-            distribute(height - chrome);
-        }
     }
     for(const Text& text : texts)
         text.edit->setFixedHeight(text.height);
@@ -765,44 +922,17 @@ Qt::Edges PromptOverlay::edgesAt(const QPoint &pos) const
     Qt::Edges edges;
     if(!rect().contains(pos))
         return edges;
+    // the height fits the text, so only the left and right edges resize
     if(pos.x() < OVERLAY_GRIP)
         edges |= Qt::LeftEdge;
     else if(pos.x() >= width() - OVERLAY_GRIP)
         edges |= Qt::RightEdge;
-    if(pos.y() < OVERLAY_GRIP)
-        edges |= Qt::TopEdge;
-    else if(pos.y() >= height() - OVERLAY_GRIP)
-        edges |= Qt::BottomEdge;
-    // the corners are easier to catch
-    if(edges & (Qt::LeftEdge | Qt::RightEdge)) {
-        if(pos.y() < OVERLAY_CORNER_GRIP)
-            edges |= Qt::TopEdge;
-        else if(pos.y() >= height() - OVERLAY_CORNER_GRIP)
-            edges |= Qt::BottomEdge;
-    }
-    if(edges & (Qt::TopEdge | Qt::BottomEdge)) {
-        if(pos.x() < OVERLAY_CORNER_GRIP)
-            edges |= Qt::LeftEdge;
-        else if(pos.x() >= width() - OVERLAY_CORNER_GRIP)
-            edges |= Qt::RightEdge;
-    }
     return edges;
 }
 
 void PromptOverlay::updateEdgeCursor(Qt::Edges edges)
 {
-    const bool horizontal = edges & (Qt::LeftEdge | Qt::RightEdge);
-    const bool vertical = edges & (Qt::TopEdge | Qt::BottomEdge);
-    if(horizontal && vertical) {
-        const bool falling = (edges & Qt::LeftEdge) ? bool(edges & Qt::TopEdge) : bool(edges & Qt::BottomEdge);
-        setCursor(falling ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor);
-    } else if(horizontal) {
-        setCursor(Qt::SizeHorCursor);
-    } else if(vertical) {
-        setCursor(Qt::SizeVerCursor);
-    } else {
-        setCursor(Qt::ArrowCursor);
-    }
+    setCursor(edges & (Qt::LeftEdge | Qt::RightEdge) ? Qt::SizeHorCursor : Qt::ArrowCursor);
 }
 
 void PromptOverlay::updateAnchor(const QRect &rect)

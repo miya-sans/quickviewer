@@ -128,6 +128,8 @@ MainWindow::MainWindow(QWidget *parent)
         m_toast->showMessage(message, QString(), QString(), false);
     });
     connect(m_promptOverlay, &PromptOverlay::hideRequested, ui->actionShowPrompt, &QAction::trigger);
+    // the keys pressed in the selectable texts of the prompt (except Ctrl+C) are handled like on the image
+    connect(m_promptOverlay, &PromptOverlay::viewKeyPressed, this, &MainWindow::keyPressEvent);
     ui->actionShowPrompt->setChecked(qApp->ShowPromptOverlay());
     connect(ui->actionShowPrompt, &QAction::triggered, this, &MainWindow::onActionShowPrompt_triggered);
 
