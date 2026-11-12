@@ -8,6 +8,7 @@
 
 class QAbstractScrollArea;
 class QGridLayout;
+class QKeyEvent;
 class QLabel;
 class QTextEdit;
 class QToolButton;
@@ -15,9 +16,10 @@ class QToolButton;
 /**
  * @brief The PromptOverlay class
  * Shows the prompts and the settings of an image made with Stable Diffusion over the image view.
- * It appears only for images with readable generation data.
- * It is moved with its header and resized with its edges, and both are remembered.
- * Double-clicking the header puts it back in the bottom right corner in the size of the text.
+ * It appears only for images with readable generation data. The prompts are shown whole, without scroll bars.
+ * It is moved with its header and its width is changed with its left and right edges, and both are remembered.
+ * Double-clicking the header puts it back in the bottom right corner in the default width.
+ * A click on a text gives it the keys: Ctrl+C copies the selection, the other keys go back to the image view.
  */
 class PromptOverlay : public QFrame
 {
@@ -42,6 +44,10 @@ signals:
      * @brief hideRequested the close button was pushed
      */
     void hideRequested();
+    /**
+     * @brief viewKeyPressed a key pressed in a text, for the image view, which has the focus again
+     */
+    void viewKeyPressed(QKeyEvent* event);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -99,11 +105,10 @@ private:
     QToolButton* m_settingsButton;
     QTextEdit* m_settingsText;
 
-    // the size set by the user (invalid when it fits the text) and the distance from the nearest corner of the view
+    // the width set by the user (0 or less for the default width) and the distance from the nearest corner of the view
     QSize m_customSize;
     Qt::Corner m_corner;
     QPoint m_offset;
-    int m_minimumHeight;
 
     DragMode m_dragMode;
     Qt::Edges m_resizeEdges;
